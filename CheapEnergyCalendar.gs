@@ -49,8 +49,8 @@ function installTriggers() {
     .create();
 
   Logger.log(
-    `Triggers ingesteld: agenda om ${AGENDA_TRIGGER_HOUR}:00 uur, ` +
-    `Fox ESS-sync om ${FOX_SYNC_TRIGGER_HOUR}:00 (${SCRIPT_TIME_ZONE}).`
+    `Triggers set: calendar at ${AGENDA_TRIGGER_HOUR}:00, ` +
+    `Fox ESS sync at ${FOX_SYNC_TRIGGER_HOUR}:00 (${SCRIPT_TIME_ZONE}).`
   );
 }
 
@@ -61,20 +61,20 @@ function scheduleCheapestElectricity() {
   const response = UrlFetchApp.fetch(PRICE_API_URL, { muteHttpExceptions: true });
   const status = response.getResponseCode();
   if (status !== 200) {
-    throw new Error(`Energy-Charts API gaf HTTP ${status}: ${response.getContentText()}`);
+    throw new Error(`Energy-Charts API returned HTTP ${status}: ${response.getContentText()}`);
   }
 
   const priceData = JSON.parse(response.getContentText());
   if (!priceData || !priceData.attributes || !priceData.attributes.delivery_date ||
       !Array.isArray(priceData.data) || priceData.data.length === 0) {
-    throw new Error('De API heeft geen day-aheadprijzen voor morgen teruggegeven.');
+    throw new Error('The API did not return any day-ahead prices for tomorrow.');
   }
 
   const quarterHours = priceData.data.map(record => {
     const start = new Date(record.timestamp);
     const price = record.values && record.values.day_ahead_price;
     if (Number.isNaN(start.getTime()) || typeof price !== 'number' || !Number.isFinite(price)) {
-      throw new Error('De API bevat een ongeldige tijd of prijs; agenda niet aangepast.');
+      throw new Error('The API contains an invalid time or price; calendar not updated.');
     }
     return {
       start: start,
@@ -85,7 +85,7 @@ function scheduleCheapestElectricity() {
 
   for (let i = 1; i < quarterHours.length; i++) {
     if (quarterHours[i].start.getTime() !== quarterHours[i - 1].end.getTime()) {
-      throw new Error('De API-prijsintervallen zijn niet aaneengesloten; agenda niet aangepast.');
+      throw new Error('The API price intervals are not contiguous; calendar not updated.');
     }
   }
 
@@ -102,7 +102,7 @@ function scheduleCheapestElectricity() {
   });
 
   if (hourlyPrices.some(hour => hour.prices.length !== 4)) {
-    throw new Error('Niet alle uren bevatten vier kwartierprijzen; agenda niet aangepast.');
+    throw new Error('Not all hours contain four quarter-hour prices; calendar not updated.');
   }
 
   const intervals = hourlyPrices.map(hour => {
@@ -191,8 +191,8 @@ function scheduleCheapestElectricity() {
   }
 
   Logger.log(
-    `Agenda '${CALENDAR_NAME}' bijgewerkt voor ${priceData.attributes.delivery_date}. ` +
-    `${selectedHours.length} goedkoopste uren ingepland.`
+    `Calendar '${CALENDAR_NAME}' updated for ${priceData.attributes.delivery_date}. ` +
+    `${selectedHours.length} cheapest hours scheduled.`
   );
 }
 
@@ -237,8 +237,8 @@ function getUniqueCalendar() {
   if (calendars.length !== 1) {
     throw new Error(
       calendars.length === 0
-        ? `Agenda '${CALENDAR_NAME}' niet gevonden.`
-        : `Er zijn meerdere agenda's met de naam '${CALENDAR_NAME}'; maak de naam uniek.`
+        ? `Calendar '${CALENDAR_NAME}' not found.`
+        : `Multiple calendars found with the name '${CALENDAR_NAME}'; please make the name unique.`
     );
   }
   return calendars[0];
@@ -251,13 +251,13 @@ function updateFoxChargeSchedule(blocks) {
   const forcePowerWatts = Number(scriptProperties.getProperty('FOX_FD_POWER_W'));
 
   if (!apiKey || !deviceSN) {
-    throw new Error('FOX_API_KEY of FOX_DEVICE_SN ontbreekt in Script Properties.');
+    throw new Error('FOX_API_KEY or FOX_DEVICE_SN is missing in Script Properties.');
   }
   if (!Number.isInteger(forcePowerWatts) || forcePowerWatts <= 0) {
-    throw new Error('FOX_FD_POWER_W moet als positief geheel aantal watt zijn ingesteld in Script Properties.');
+    throw new Error('FOX_FD_POWER_W must be set as a positive integer number of watts in Script Properties.');
   }
   if (blocks.length === 0) {
-    throw new Error('Geen laadblokken voor morgen gevonden; de bestaande Fox ESS-planning is niet aangepast.');
+    throw new Error('No charging blocks found for tomorrow; existing Fox ESS schedule was not modified.');
   }
 
   const scheduler = foxApiPost(
@@ -266,7 +266,7 @@ function updateFoxChargeSchedule(blocks) {
     { deviceSN: deviceSN }
   );
   if (!scheduler || typeof scheduler !== 'object') {
-    throw new Error('Fox ESS gaf geen geldige Scheduler V3-configuratie terug.');
+    throw new Error('Fox ESS did not return a valid Scheduler V3 configuration.');
   }
 
   const properties = scheduler.properties || {};
@@ -277,15 +277,15 @@ function updateFoxChargeSchedule(blocks) {
     if (supportedModes.includes('ForceCharge(BAT)')) {
       workMode = 'ForceCharge(BAT)';
     } else if (!supportedModes.includes(workMode)) {
-      throw new Error('Dit Fox ESS-apparaat ondersteunt de ForceCharge-plannermodus niet.');
+      throw new Error('This Fox ESS device does not support the ForceCharge scheduler mode.');
     }
   }
 
   const maxGroupCount = Number(scheduler.maxGroupCount);
   if (Number.isFinite(maxGroupCount) && blocks.length > maxGroupCount) {
     throw new Error(
-      `Fox ESS ondersteunt maximaal ${maxGroupCount} schedulerblokken; ` +
-      `${blocks.length} blokken zijn nodig.`
+      `Fox ESS supports a maximum of ${maxGroupCount} scheduler blocks; ` +
+      `${blocks.length} blocks are required.`
     );
   }
 
@@ -331,8 +331,8 @@ function updateFoxChargeSchedule(blocks) {
   );
 
   Logger.log(
-    `Fox ESS-modusplanner bijgewerkt met ${groups.length} laadblok(ken) ` +
-    `voor morgen (${workMode}, ${forcePowerWatts} W).`
+    `Fox ESS Mode Scheduler updated with ${groups.length} charging block(s) ` +
+    `for tomorrow (${workMode}, ${forcePowerWatts} W).`
   );
 }
 
@@ -347,7 +347,7 @@ function foxApiPost(path, apiKey, payload) {
   const status = response.getResponseCode();
   const responseText = response.getContentText();
   if (status < 200 || status >= 300) {
-    throw new Error(`Fox ESS API gaf HTTP ${status}: ${responseText || '(lege respons)'}`);
+    throw new Error(`Fox ESS API returned HTTP ${status}: ${responseText || '(empty response)'}`);
   }
 
   let envelope;
@@ -355,15 +355,15 @@ function foxApiPost(path, apiKey, payload) {
     envelope = JSON.parse(responseText);
   } catch (error) {
     throw new Error(
-      `Fox ESS API gaf geen geldige JSON-respons (HTTP ${status}): ` +
-      `${responseText || '(lege respons)'}`
+      `Fox ESS API did not return a valid JSON response (HTTP ${status}): ` +
+      `${responseText || '(empty response)'}`
     );
   }
   if (!envelope || typeof envelope !== 'object') {
-    throw new Error(`Fox ESS API gaf een ongeldig antwoord: ${responseText}`);
+    throw new Error(`Fox ESS API returned an invalid response: ${responseText}`);
   }
   if (envelope.errno !== 0) {
-    throw new Error(`Fox ESS API-fout (${envelope.errno}): ${responseText}`);
+    throw new Error(`Fox ESS API error (${envelope.errno}): ${responseText}`);
   }
 
   return envelope.result;
@@ -388,7 +388,7 @@ function validateFoxSchedulerValue(properties, fieldName, value) {
   if ((Number.isFinite(minimum) && value < minimum) ||
       (Number.isFinite(maximum) && value > maximum)) {
     throw new Error(
-      `FOX-plannerwaarde ${fieldName}=${value} valt buiten het apparaatbereik ` +
+      `FOX scheduler value ${fieldName}=${value} is outside the device range ` +
       `${range.min}-${range.max}.`
     );
   }
