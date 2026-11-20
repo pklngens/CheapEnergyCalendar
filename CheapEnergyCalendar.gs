@@ -1,7 +1,7 @@
 const CALENDAR_NAME = 'Huis';
 const CHEAP_PRICE_COLOR = CalendarApp.EventColor.PALE_GREEN;
 const NEGATIVE_PRICE_COLOR = CalendarApp.EventColor.BLUE;
-const PRICE_API_URL = 'https://api.energy-charts.info/v2/price_next_day?bzn=NL';
+const PRICE_API_URL = 'https://public.api.energyzero.nl/public/v1/prices';
 const PRICE_INTERVAL_MINUTES = 15;
 const EVENT_TEXT = {
   title: 'Goedkope stroom',
@@ -9,11 +9,11 @@ const EVENT_TEXT = {
   intervalPrice: 'Prijs in dit interval: \u20AC{minPrice}-\u20AC{maxPrice} per kWh.',
   negativePriceWarning: 'Let op: de gemiddelde uurprijs is negatief.',
   dailyAverage: 'Daggemiddelde: \u20AC{average} per kWh.',
-  source: 'Bron: Energy-Charts API (Bundesnetzagentur | SMARD.de).'
+  source: 'Bron: EnergyZero API (marktprijs, exclusief btw).'
 };
 const SCRIPT_TIME_ZONE = 'Europe/Amsterdam';
 
-const AGENDA_TRIGGER_HOUR = 15; // 15:00: fetch prices and add them to the calendar
+const AGENDA_TRIGGER_HOUR = 16; // 16:00: fetch prices and add them to the calendar
 const FOX_SYNC_TRIGGER_HOUR = 23; // 23:00: send tomorrow's time blocks to the battery
 const CHEAPEST_HOURS = 5;
 const FOX_BASE_URL = 'https://www.foxesscloud.com';
@@ -55,37 +55,80 @@ function installTriggers() {
 }
 
 /**
- * Runs at 15:00 to fetch tomorrow's prices and schedule the cheapest hours.
+ * Runs at 16:00 to fetch tomorrow's prices and schedule the cheapest hours.
  */
 function scheduleCheapestElectricity() {
-  const response = UrlFetchApp.fetch(PRICE_API_URL, { muteHttpExceptions: true });
+  const todayInAmsterdam = Utilities.formatDate(new Date(), SCRIPT_TIME_ZONE, 'yyyy-MM-dd');
+  const [year, month, day] = todayInAmsterdam.split('-').map(Number);
+  const tomorrow = new Date(Date.UTC(year, month - 1, day + 1));
+  const dayAfterTomorrow = new Date(Date.UTC(year, month - 1, day + 2));
+  const tomorrowDate = Utilities.formatDate(tomorrow, 'UTC', 'yyyy-MM-dd');
+  const tomorrowApiDate = Utilities.formatDate(tomorrow, 'UTC', 'dd-MM-yyyy');
+  const requestedDayStart = Utilities.parseDate(
+    `${tomorrowDate} 00:00:00`,
+    SCRIPT_TIME_ZONE,
+    'yyyy-MM-dd HH:mm:ss'
+  );
+  const dayAfterTomorrowDate = Utilities.formatDate(dayAfterTomorrow, 'UTC', 'yyyy-MM-dd');
+  const requestedDayEnd = Utilities.parseDate(
+    `${dayAfterTomorrowDate} 00:00:00`,
+    SCRIPT_TIME_ZONE,
+    'yyyy-MM-dd HH:mm:ss'
+  );
+  const requestUrl =
+    `${PRICE_API_URL}?energyType=ENERGY_TYPE_ELECTRICITY` +
+    `&date=${encodeURIComponent(tomorrowApiDate)}&interval=INTERVAL_QUARTER`;
+  const response = UrlFetchApp.fetch(requestUrl, { muteHttpExceptions: true });
   const status = response.getResponseCode();
   if (status !== 200) {
-    throw new Error(`Energy-Charts API returned HTTP ${status}: ${response.getContentText()}`);
+    throw new Error(`EnergyZero API returned HTTP ${status}: ${response.getContentText()}`);
   }
 
-  const priceData = JSON.parse(response.getContentText());
-  if (!priceData || !priceData.attributes || !priceData.attributes.delivery_date ||
-      !Array.isArray(priceData.data) || priceData.data.length === 0) {
-    throw new Error('The API did not return any day-ahead prices for tomorrow.');
+  const responseText = response.getContentText();
+  let priceData;
+  try {
+    priceData = JSON.parse(responseText);
+  } catch (error) {
+    throw new Error(`EnergyZero API returned invalid JSON: ${responseText}`);
   }
 
-  const quarterHours = priceData.data.map(record => {
-    const start = new Date(record.timestamp);
-    const price = record.values && record.values.day_ahead_price;
-    if (Number.isNaN(start.getTime()) || typeof price !== 'number' || !Number.isFinite(price)) {
-      throw new Error('The API contains an invalid time or price; calendar not updated.');
-    }
-    return {
-      start: start,
-      end: new Date(start.getTime() + PRICE_INTERVAL_MINUTES * 60000),
-      price: price
-    };
-  });
+  if (!priceData || !Array.isArray(priceData.base)) {
+    throw new Error('EnergyZero API did not return a valid price list.');
+  }
+
+  const quarterHours = priceData.base
+    .filter(record => {
+      const start = new Date(record.start);
+      return !Number.isNaN(start.getTime()) &&
+        start >= requestedDayStart && start < requestedDayEnd;
+    })
+    .map(record => {
+      const start = new Date(record.start);
+      const end = new Date(record.end);
+      const rawPrice = record.price && record.price.value;
+      const price = Number(rawPrice);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) ||
+          end.getTime() - start.getTime() !== PRICE_INTERVAL_MINUTES * 60000 ||
+          (typeof rawPrice !== 'string' && typeof rawPrice !== 'number') ||
+          rawPrice === '' || !Number.isFinite(price)) {
+        throw new Error('EnergyZero API contains an invalid time or price; calendar not updated.');
+      }
+      return {
+        start: start,
+        end: end,
+        price: price
+      };
+    });
+
+  if (quarterHours.length === 0 ||
+      quarterHours[0].start.getTime() !== requestedDayStart.getTime() ||
+      quarterHours[quarterHours.length - 1].end.getTime() !== requestedDayEnd.getTime()) {
+    throw new Error('EnergyZero API did not return a complete price day; calendar not updated.');
+  }
 
   for (let i = 1; i < quarterHours.length; i++) {
     if (quarterHours[i].start.getTime() !== quarterHours[i - 1].end.getTime()) {
-      throw new Error('The API price intervals are not contiguous; calendar not updated.');
+      throw new Error('EnergyZero API price intervals are not contiguous; calendar not updated.');
     }
   }
 
@@ -135,9 +178,9 @@ function scheduleCheapestElectricity() {
   const createEvent = (start, end, minPrice, maxPrice, hasNegativePrice) => {
     const textValues = {
       hours: selectedHours.length,
-      minPrice: (minPrice / 1000).toFixed(4),
-      maxPrice: (maxPrice / 1000).toFixed(4),
-      average: (average / 1000).toFixed(4)
+      minPrice: minPrice.toFixed(4),
+      maxPrice: maxPrice.toFixed(4),
+      average: average.toFixed(4)
     };
     const description = [
       formatEventText(EVENT_TEXT.summary, textValues),
@@ -191,7 +234,7 @@ function scheduleCheapestElectricity() {
   }
 
   Logger.log(
-    `Calendar '${CALENDAR_NAME}' updated for ${priceData.attributes.delivery_date}. ` +
+    `Calendar '${CALENDAR_NAME}' updated for ${tomorrowDate}. ` +
     `${selectedHours.length} cheapest hours scheduled.`
   );
 }

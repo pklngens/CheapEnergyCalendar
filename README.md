@@ -7,7 +7,7 @@ one event.
 ## How it works
 
 - Retrieves Dutch day-ahead electricity prices from the
-  [Energy-Charts API](https://api.energy-charts.info/).
+  [EnergyZero public API](https://public.api.energyzero.nl/public/v1/prices).
 - Averages the four 15-minute prices in each hour and selects the five cheapest
   hours.
 - Creates events titled **Goedkope stroom** in the configured calendar.
@@ -17,8 +17,8 @@ one event.
 - Checks the device's Scheduler V3 capabilities and sends those events to the
   Fox ESS scheduler using the configured schedule power value.
 
-Prices shown in event descriptions are converted from EUR/MWh to EUR/kWh. They
-are wholesale market prices and may not include taxes, supplier charges, or
+The script uses EnergyZero's `base` price stream, which is the wholesale market
+price in EUR/kWh, excluding VAT. It may not include taxes, supplier charges, or
 other costs on your energy bill.
 
 ## Setup
@@ -36,17 +36,20 @@ other costs on your energy bill.
    installed the Dutch-named trigger handlers, this replaces them with the
    English-named handlers.
 6. Check the execution log for errors. The calendar is updated daily at
-   approximately 15:00 and the Fox ESS schedule is synced at approximately
+   approximately 16:00 and the Fox ESS schedule is synced at approximately
    23:00, both in the `Europe/Amsterdam` time zone.
 
-The script uses the Netherlands (`NL`) price zone. The calendar must exist and
+EnergyZero publishes tomorrow's electricity prices around 14:00 UTC. The
+16:00 Amsterdam trigger allows for that publication time in both winter and
+summer. The script requests quarter-hour market prices for tomorrow's Dutch
+local date and ignores prices outside that date. The calendar must exist and
 its name must match exactly; if more than one calendar has that name, rename
 them so the target is unambiguous.
 
 ## Configuration
 
 The constants at the top of `CheapEnergyCalendar.gs` control the calendar name,
-event title and colors, price zone/API URL, trigger hours, and number of
+event title and colors, API URL, trigger hours, and number of
 cheapest hours. Google Apps Script time-based triggers run around the
 configured hour, not necessarily at an exact minute. Run `installTriggers`
 again after changing trigger settings; it replaces the existing triggers for
