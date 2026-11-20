@@ -3,32 +3,45 @@ const CHEAP_PRICE_COLOR = CalendarApp.EventColor.PALE_GREEN;
 const NEGATIVE_PRICE_COLOR = CalendarApp.EventColor.BLUE;
 const PRICE_API_URL = 'https://api.energy-charts.info/v2/price_next_day?bzn=NL';
 const PRICE_INTERVAL_MINUTES = 15;
-const EVENT_TITLE = 'Goedkope stroom';
+const EVENT_TEXT = {
+  title: 'Goedkope stroom',
+  summary: 'Een van de {hours} goedkoopste uren van morgen.',
+  intervalPrice: 'Prijs in dit interval: \u20AC{minPrice}-\u20AC{maxPrice} per kWh.',
+  negativePriceWarning: 'Let op: de gemiddelde uurprijs is negatief.',
+  dailyAverage: 'Daggemiddelde: \u20AC{average} per kWh.',
+  source: 'Bron: Energy-Charts API (Bundesnetzagentur | SMARD.de).'
+};
 const SCRIPT_TIME_ZONE = 'Europe/Amsterdam';
 
-const AGENDA_TRIGGER_HOUR = 15; // 15:00 uur: prijzen ophalen en in agenda zetten
-const FOX_SYNC_TRIGGER_HOUR = 23; // 23:00 uur: blokken van morgen naar batterij sturen
+const AGENDA_TRIGGER_HOUR = 15; // 15:00: fetch prices and add them to the calendar
+const FOX_SYNC_TRIGGER_HOUR = 23; // 23:00: send tomorrow's time blocks to the battery
 const CHEAPEST_HOURS = 5;
 const FOX_BASE_URL = 'https://www.foxesscloud.com';
 
 /**
- * Voer deze functie eenmalig uit om beide dagelijkse triggers (15:00 en 23:00) in te stellen.
+ * Run once to install the daily calendar and Fox ESS triggers.
  */
 function installTriggers() {
-  const targetFunctions = ['planGoedkopeStroom', 'syncFoxESSVoorMorgen'];
+  // Include legacy names so reinstalling removes previously created triggers.
+  const targetHandlers = [
+    'scheduleCheapestElectricity',
+    'syncFoxESSForTomorrow',
+    'planGoedkopeStroom',
+    'syncFoxESSVoorMorgen'
+  ];
 
   ScriptApp.getProjectTriggers()
-    .filter(trigger => targetFunctions.includes(trigger.getHandlerFunction()))
+    .filter(trigger => targetHandlers.includes(trigger.getHandlerFunction()))
     .forEach(trigger => ScriptApp.deleteTrigger(trigger));
 
-  ScriptApp.newTrigger('planGoedkopeStroom')
+  ScriptApp.newTrigger('scheduleCheapestElectricity')
     .timeBased()
     .everyDays(1)
     .atHour(AGENDA_TRIGGER_HOUR)
     .inTimezone(SCRIPT_TIME_ZONE)
     .create();
 
-  ScriptApp.newTrigger('syncFoxESSVoorMorgen')
+  ScriptApp.newTrigger('syncFoxESSForTomorrow')
     .timeBased()
     .everyDays(1)
     .atHour(FOX_SYNC_TRIGGER_HOUR)
@@ -37,14 +50,14 @@ function installTriggers() {
 
   Logger.log(
     `Triggers ingesteld: agenda om ${AGENDA_TRIGGER_HOUR}:00 uur, ` +
-    `Fox ESS sync om ${FOX_SYNC_TRIGGER_HOUR}:00 uur (${SCRIPT_TIME_ZONE}).`
+    `Fox ESS-sync om ${FOX_SYNC_TRIGGER_HOUR}:00 (${SCRIPT_TIME_ZONE}).`
   );
 }
 
 /**
- * Draait om 15:00 uur: haalt prijzen voor morgen op en zet blokken in Google Agenda.
+ * Runs at 15:00 to fetch tomorrow's prices and schedule the cheapest hours.
  */
-function planGoedkopeStroom() {
+function scheduleCheapestElectricity() {
   const response = UrlFetchApp.fetch(PRICE_API_URL, { muteHttpExceptions: true });
   const status = response.getResponseCode();
   if (status !== 200) {
@@ -114,20 +127,28 @@ function planGoedkopeStroom() {
   const dayEnd = intervals[intervals.length - 1].end;
 
   calendar.getEvents(dayStart, dayEnd).forEach(event => {
-    if (event.getTitle().toLowerCase() === EVENT_TITLE.toLowerCase()) {
+    if (event.getTitle().toLowerCase() === EVENT_TEXT.title.toLowerCase()) {
       event.deleteEvent();
     }
   });
 
   const createEvent = (start, end, minPrice, maxPrice, hasNegativePrice) => {
-    calendar.createEvent(EVENT_TITLE, start, end, {
-      description:
-        `Een van de ${selectedHours.length} goedkoopste uren van morgen.\n` +
-        `Prijs in dit interval: €${(minPrice / 1000).toFixed(4)}-` +
-        `€${(maxPrice / 1000).toFixed(4)} per kWh.\n` +
-        (hasNegativePrice ? 'Let op: de gemiddelde uurprijs is negatief.\n' : '') +
-        `Daggemiddelde: €${(average / 1000).toFixed(4)} per kWh.\n` +
-        'Bron: Energy-Charts API (Bundesnetzagentur | SMARD.de).'
+    const textValues = {
+      hours: selectedHours.length,
+      minPrice: (minPrice / 1000).toFixed(4),
+      maxPrice: (maxPrice / 1000).toFixed(4),
+      average: (average / 1000).toFixed(4)
+    };
+    const description = [
+      formatEventText(EVENT_TEXT.summary, textValues),
+      formatEventText(EVENT_TEXT.intervalPrice, textValues),
+      ...(hasNegativePrice ? [EVENT_TEXT.negativePriceWarning] : []),
+      formatEventText(EVENT_TEXT.dailyAverage, textValues),
+      EVENT_TEXT.source
+    ].join('\n');
+
+    calendar.createEvent(EVENT_TEXT.title, start, end, {
+      description: description
     }).setColor(hasNegativePrice ? NEGATIVE_PRICE_COLOR : CHEAP_PRICE_COLOR);
   };
 
@@ -176,10 +197,9 @@ function planGoedkopeStroom() {
 }
 
 /**
- * Draait om 23:00 uur: leest alle 'Goedkope stroom'-blokken van morgen uit Google Agenda
- * en programmeert deze in de Fox ESS Modusplanner.
+ * Runs at 23:00 to send tomorrow's calendar blocks to the Fox ESS scheduler.
  */
-function syncFoxESSVoorMorgen() {
+function syncFoxESSForTomorrow() {
   const calendar = getUniqueCalendar();
 
   const todayInAmsterdam = Utilities.formatDate(new Date(), SCRIPT_TIME_ZONE, 'yyyy-MM-dd');
@@ -198,7 +218,7 @@ function syncFoxESSVoorMorgen() {
   );
 
   const events = calendar.getEvents(tomorrowStart, tomorrowEnd)
-    .filter(event => event.getTitle().toLowerCase() === EVENT_TITLE.toLowerCase());
+    .filter(event => event.getTitle().toLowerCase() === EVENT_TEXT.title.toLowerCase());
 
   const blocks = events.map(event => ({
     start: event.getStartTime(),
@@ -206,6 +226,10 @@ function syncFoxESSVoorMorgen() {
   }));
 
   updateFoxChargeSchedule(blocks);
+}
+
+function formatEventText(template, values) {
+  return template.replace(/\{(\w+)\}/g, (match, key) => values[key]);
 }
 
 function getUniqueCalendar() {
@@ -233,7 +257,7 @@ function updateFoxChargeSchedule(blocks) {
     throw new Error('FOX_FD_POWER_W moet als positief geheel aantal watt zijn ingesteld in Script Properties.');
   }
   if (blocks.length === 0) {
-    throw new Error('Geen laadblokken voor morgen gevonden; de bestaande Fox ESS planning is niet aangepast.');
+    throw new Error('Geen laadblokken voor morgen gevonden; de bestaande Fox ESS-planning is niet aangepast.');
   }
 
   const scheduler = foxApiPost(
@@ -242,7 +266,7 @@ function updateFoxChargeSchedule(blocks) {
     { deviceSN: deviceSN }
   );
   if (!scheduler || typeof scheduler !== 'object') {
-    throw new Error('Fox ESS gaf geen geldige Scheduler V3 configuratie terug.');
+    throw new Error('Fox ESS gaf geen geldige Scheduler V3-configuratie terug.');
   }
 
   const properties = scheduler.properties || {};
@@ -253,14 +277,14 @@ function updateFoxChargeSchedule(blocks) {
     if (supportedModes.includes('ForceCharge(BAT)')) {
       workMode = 'ForceCharge(BAT)';
     } else if (!supportedModes.includes(workMode)) {
-      throw new Error('Dit Fox ESS apparaat ondersteunt geen ForceCharge scheduler-modus.');
+      throw new Error('Dit Fox ESS-apparaat ondersteunt de ForceCharge-plannermodus niet.');
     }
   }
 
   const maxGroupCount = Number(scheduler.maxGroupCount);
   if (Number.isFinite(maxGroupCount) && blocks.length > maxGroupCount) {
     throw new Error(
-      `Fox ESS ondersteunt maximaal ${maxGroupCount} scheduler-blokken; ` +
+      `Fox ESS ondersteunt maximaal ${maxGroupCount} schedulerblokken; ` +
       `${blocks.length} blokken zijn nodig.`
     );
   }
@@ -307,7 +331,7 @@ function updateFoxChargeSchedule(blocks) {
   );
 
   Logger.log(
-    `Fox ESS Modusplanner bijgewerkt met ${groups.length} laadblok(ken) ` +
+    `Fox ESS-modusplanner bijgewerkt met ${groups.length} laadblok(ken) ` +
     `voor morgen (${workMode}, ${forcePowerWatts} W).`
   );
 }
@@ -339,7 +363,7 @@ function foxApiPost(path, apiKey, payload) {
     throw new Error(`Fox ESS API gaf een ongeldig antwoord: ${responseText}`);
   }
   if (envelope.errno !== 0) {
-    throw new Error(`Fox ESS API fout (${envelope.errno}): ${responseText}`);
+    throw new Error(`Fox ESS API-fout (${envelope.errno}): ${responseText}`);
   }
 
   return envelope.result;
@@ -364,7 +388,7 @@ function validateFoxSchedulerValue(properties, fieldName, value) {
   if ((Number.isFinite(minimum) && value < minimum) ||
       (Number.isFinite(maximum) && value > maximum)) {
     throw new Error(
-      `FOX schedulerwaarde ${fieldName}=${value} valt buiten het apparaatbereik ` +
+      `FOX-plannerwaarde ${fieldName}=${value} valt buiten het apparaatbereik ` +
       `${range.min}-${range.max}.`
     );
   }

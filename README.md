@@ -15,7 +15,7 @@ one event.
   negative average price.
 - Replaces existing events with that title for the day being scheduled.
 - Checks the device's Scheduler V3 capabilities and sends those events to the
-  Fox ESS Modusplanner using the configured schedule power value.
+  Fox ESS scheduler using the configured schedule power value.
 
 Prices shown in event descriptions are converted from EUR/MWh to EUR/kWh. They
 are wholesale market prices and may not include taxes, supplier charges, or
@@ -32,7 +32,9 @@ other costs on your energy bill.
    sync. Set `FOX_FD_POWER_W` to the supported schedule power in watts; for the
    MQ2200-M-AC in this setup, use `1200` to match its current scheduler setting.
 5. Save the project and run `installTriggers` once. Accept the permissions
-   requested for Google Calendar access and external requests.
+   requested for Google Calendar access and external requests. If you previously
+   installed the Dutch-named trigger handlers, this replaces them with the
+   English-named handlers.
 6. Check the execution log for errors. The calendar is updated daily at
    approximately 15:00 and the Fox ESS schedule is synced at approximately
    23:00, both in the `Europe/Amsterdam` time zone.
@@ -48,7 +50,11 @@ event title and colors, price zone/API URL, trigger hours, and number of
 cheapest hours. Google Apps Script time-based triggers run around the
 configured hour, not necessarily at an exact minute. Run `installTriggers`
 again after changing trigger settings; it replaces the existing triggers for
-these two handlers.
+these handlers, including the previous Dutch-named handlers.
+
+The calendar title and description templates are grouped in `EVENT_TEXT`.
+When localizing them, keep the `{hours}`, `{minPrice}`, `{maxPrice}`, and
+`{average}` placeholders unchanged.
 
 ## Fox ESS API tests
 
