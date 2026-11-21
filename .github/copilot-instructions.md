@@ -2,32 +2,35 @@
 
 ## Project overview
 
-This repository contains a single Google Apps Script, `CheapEnergyCalendar.gs`,
-and its setup documentation in `README.md`. The script fetches Dutch day-ahead
-prices from EnergyZero's public API and schedules the five cheapest hours for
-the next day in a Google Calendar.
+This repository contains two Google Apps Script files: `CheapEnergyCalendar.gs`
+manages calendar events, and `FoxBatteryManager.gs` independently plans and
+syncs a battery schedule. Both use EnergyZero's Dutch day-ahead price API, but
+the battery manager does not consume calendar events.
 
-The flow is implemented in `scheduleCheapestElectricity`: validate the API
-response and 15-minute intervals, keep only the requested Dutch day, average
-four intervals per hour, select the cheapest hours, then replace matching
-calendar events and create events for contiguous selected hours.
-`installTriggers` replaces existing triggers for the handlers before
-installing the daily calendar and Fox ESS triggers. Keep the setup and behavior
-documented in `README.md` aligned with changes to the script.
+The calendar flow is implemented in `scheduleCheapestElectricity`: validate
+the API response and 15-minute intervals, keep only the requested Dutch day,
+average four intervals per hour, select the cheapest hours, then replace
+matching calendar events and create events for contiguous selected hours. The
+battery flow is implemented in `syncFoxESSForTomorrow`. Keep the calendar and
+battery triggers separate: `installCalendarTrigger` manages only the calendar
+handler, while `installFoxBatteryTrigger` manages only the battery handler.
+Keep the setup and behavior documented in `README.md` aligned with the scripts.
 
 ## Build, test, and lint
 
 There are no configured build, test, or lint commands in this repository. The
-script is run from the Google Apps Script editor. For a manual end-to-end run,
-execute `scheduleCheapestElectricity` there; it makes a live API request and
-modifies the configured calendar. Run `installTriggers` only when setting up
-or reinstalling its daily schedules.
+scripts are run from the Google Apps Script editor. For a manual calendar run,
+execute `scheduleCheapestElectricity`; it makes a live API request and modifies
+the configured calendar. `syncFoxESSForTomorrow` makes live Fox ESS API calls
+and modifies the battery scheduler. Run each install function only when setting
+up or reinstalling its respective trigger.
 
 ## Code conventions
 
-- Keep deployment settings together in the constants at the top of
-  `CheapEnergyCalendar.gs`, including calendar name, API URL, interval length,
-  time zone, trigger hour, and number of selected hours.
+- Keep calendar settings in the constants at the top of
+  `CheapEnergyCalendar.gs` and Fox ESS settings in `FoxBatteryManager.gs`.
+  `SCRIPT_TIME_ZONE` is a required Script Property read independently by both
+  files; do not make either script depend on the other's constants or helpers.
 - The code uses Google Apps Script services (`UrlFetchApp`, `CalendarApp`,
   `ScriptApp`, and `Logger`) directly; the script is not structured as a
   Node.js module.
@@ -36,9 +39,21 @@ or reinstalling its daily schedules.
   quarter-hour prices per hour before deleting or creating events.
 - Use the EnergyZero `base` price stream, which is in EUR/kWh excluding VAT.
   Do not convert it from EUR/MWh.
+- The battery manager reads SoC via `/op/v0/device/real/query` with
+  `{sn: deviceSN, variables: ['SoC']}` and validates the returned percentage.
+  It uses a cheapest contiguous sliding window, an eight-quarter 10%-to-100%
+  baseline at 1200 W, and a 1.20 discharge multiplier. At 85% SoC or above,
+  skip charging but use a hypothetical cheapest eight-quarter window for the
+  profitability reference.
+- Merge adjacent 15-minute battery intervals with identical modes. Compare the
+  final group count against the device-reported `maxGroupCount` and do not write
+  if it exceeds the limit.
 - Use epoch timestamps for interval continuity and hour grouping. The calendar
   trigger runs at 16:00 in `Europe/Amsterdam` to allow for price publication in
-  both winter and summer. Avoid depending on the machine's local time zone.
-- Keep user-facing event titles and log/error messages in Dutch. Existing
-  events are matched by title without regard to case, and adjacent selected
-  hours are represented by a single event.
+  both winter and summer. The time zone comes from the `SCRIPT_TIME_ZONE`
+  Script Property; reinstall both triggers after changing it. Avoid depending
+  on the machine's local time zone.
+- All user-facing alerts, thrown errors, and log strings in this codebase must
+  be written in English. Existing calendar events are matched by title without
+  regard to case, and adjacent selected hours are represented by a single
+  event.

@@ -11,23 +11,51 @@ const EVENT_TEXT = {
   dailyAverage: 'Daggemiddelde: \u20AC{average} per kWh.',
   source: 'Bron: EnergyZero API (marktprijs, exclusief btw).'
 };
-const SCRIPT_TIME_ZONE = 'Europe/Amsterdam';
+const CALENDAR_MESSAGES = {
+  ERROR_MESSAGES: {
+    energyZeroNotPublished:
+      'EnergyZero has not yet published prices for {date}. ' +
+      'The calendar was not updated; please try again after {hour}:00 ({timeZone}).',
+    energyZeroHttp: 'EnergyZero API returned HTTP {status}: {responseText}',
+    energyZeroInvalidJson: 'EnergyZero API returned invalid JSON: {responseText}',
+    energyZeroInvalidPriceList: 'EnergyZero API did not return a valid price list.',
+    energyZeroInvalidTimeOrPrice:
+      'EnergyZero API contains an invalid time or price; calendar not updated.',
+    energyZeroIncompletePriceDay:
+      'EnergyZero API did not return a complete price day; calendar not updated.',
+    energyZeroNonContiguousIntervals:
+      'EnergyZero API price intervals are not contiguous; calendar not updated.',
+    incompleteHourPrices:
+      'The price data does not contain four quarter-hour prices for every hour; ' +
+      'the calendar was not updated.',
+    calendarNotFound: "Calendar '{calendarName}' not found.",
+    multipleCalendarsFound:
+      "Multiple calendars found with the name '{calendarName}'; please make the name unique.",
+    missingTimeZone:
+      'SCRIPT_TIME_ZONE is missing from Script Properties. ' +
+      'For example, set it to Europe/Amsterdam.',
+    invalidTimeZone:
+      "SCRIPT_TIME_ZONE '{timeZone}' is not a valid time zone: {details}"
+  },
+  LOG_messages: {
+    calendarTriggerSet:
+      'Calendar trigger set for approximately {hour}:00 ({timeZone}).',
+    calendarUpdated:
+      "Calendar '{calendarName}' updated for {date}. {selectedHours} cheapest hours scheduled."
+  }
+};
 
-const AGENDA_TRIGGER_HOUR = 16; // 16:00: fetch prices and add them to the calendar
-const FOX_SYNC_TRIGGER_HOUR = 23; // 23:00: send tomorrow's time blocks to the battery
+const AGENDA_TRIGGER_HOUR = 16;
 const CHEAPEST_HOURS = 5;
-const FOX_BASE_URL = 'https://www.foxesscloud.com';
 
 /**
- * Run once to install the daily calendar and Fox ESS triggers.
+ * Run once to install or reinstall the daily calendar trigger.
  */
-function installTriggers() {
-  // Include legacy names so reinstalling removes previously created triggers.
+function installCalendarTrigger() {
+  const timeZone = getCalendarTimeZone();
   const targetHandlers = [
     'scheduleCheapestElectricity',
-    'syncFoxESSForTomorrow',
-    'planGoedkopeStroom',
-    'syncFoxESSVoorMorgen'
+    'planGoedkopeStroom'
   ];
 
   ScriptApp.getProjectTriggers()
@@ -38,27 +66,21 @@ function installTriggers() {
     .timeBased()
     .everyDays(1)
     .atHour(AGENDA_TRIGGER_HOUR)
-    .inTimezone(SCRIPT_TIME_ZONE)
+    .inTimezone(timeZone)
     .create();
 
-  ScriptApp.newTrigger('syncFoxESSForTomorrow')
-    .timeBased()
-    .everyDays(1)
-    .atHour(FOX_SYNC_TRIGGER_HOUR)
-    .inTimezone(SCRIPT_TIME_ZONE)
-    .create();
-
-  Logger.log(
-    `Triggers set: calendar at ${AGENDA_TRIGGER_HOUR}:00, ` +
-    `Fox ESS sync at ${FOX_SYNC_TRIGGER_HOUR}:00 (${SCRIPT_TIME_ZONE}).`
-  );
+  Logger.log(formatTextTemplate(CALENDAR_MESSAGES.LOG_messages.calendarTriggerSet, {
+    hour: AGENDA_TRIGGER_HOUR,
+    timeZone: timeZone
+  }));
 }
 
 /**
  * Runs at 16:00 to fetch tomorrow's prices and schedule the cheapest hours.
  */
 function scheduleCheapestElectricity() {
-  const todayInAmsterdam = Utilities.formatDate(new Date(), SCRIPT_TIME_ZONE, 'yyyy-MM-dd');
+  const timeZone = getCalendarTimeZone();
+  const todayInAmsterdam = Utilities.formatDate(new Date(), timeZone, 'yyyy-MM-dd');
   const [year, month, day] = todayInAmsterdam.split('-').map(Number);
   const tomorrow = new Date(Date.UTC(year, month - 1, day + 1));
   const dayAfterTomorrow = new Date(Date.UTC(year, month - 1, day + 2));
@@ -66,13 +88,13 @@ function scheduleCheapestElectricity() {
   const tomorrowApiDate = Utilities.formatDate(tomorrow, 'UTC', 'dd-MM-yyyy');
   const requestedDayStart = Utilities.parseDate(
     `${tomorrowDate} 00:00:00`,
-    SCRIPT_TIME_ZONE,
+    timeZone,
     'yyyy-MM-dd HH:mm:ss'
   );
   const dayAfterTomorrowDate = Utilities.formatDate(dayAfterTomorrow, 'UTC', 'yyyy-MM-dd');
   const requestedDayEnd = Utilities.parseDate(
     `${dayAfterTomorrowDate} 00:00:00`,
-    SCRIPT_TIME_ZONE,
+    timeZone,
     'yyyy-MM-dd HH:mm:ss'
   );
   const requestUrl =
@@ -80,20 +102,36 @@ function scheduleCheapestElectricity() {
     `&date=${encodeURIComponent(tomorrowApiDate)}&interval=INTERVAL_QUARTER`;
   const response = UrlFetchApp.fetch(requestUrl, { muteHttpExceptions: true });
   const status = response.getResponseCode();
+  const responseText = response.getContentText();
   if (status !== 200) {
-    throw new Error(`EnergyZero API returned HTTP ${status}: ${response.getContentText()}`);
+    // EnergyZero returns this 404 until all quarter-hour prices for the requested date are published.
+    if (status === 404 &&
+        responseText.toLowerCase().includes('prices do not span the whole requested date')) {
+      throw new Error(
+          formatTextTemplate(CALENDAR_MESSAGES.ERROR_MESSAGES.energyZeroNotPublished, {
+          date: tomorrowDate,
+          hour: AGENDA_TRIGGER_HOUR,
+          timeZone: timeZone
+        })
+      );
+    }
+    throw new Error(formatTextTemplate(CALENDAR_MESSAGES.ERROR_MESSAGES.energyZeroHttp, {
+      status: status,
+      responseText: responseText
+    }));
   }
 
-  const responseText = response.getContentText();
   let priceData;
   try {
     priceData = JSON.parse(responseText);
   } catch (error) {
-    throw new Error(`EnergyZero API returned invalid JSON: ${responseText}`);
+    throw new Error(formatTextTemplate(CALENDAR_MESSAGES.ERROR_MESSAGES.energyZeroInvalidJson, {
+      responseText: responseText
+    }));
   }
 
   if (!priceData || !Array.isArray(priceData.base)) {
-    throw new Error('EnergyZero API did not return a valid price list.');
+    throw new Error(CALENDAR_MESSAGES.ERROR_MESSAGES.energyZeroInvalidPriceList);
   }
 
   const quarterHours = priceData.base
@@ -111,7 +149,7 @@ function scheduleCheapestElectricity() {
           end.getTime() - start.getTime() !== PRICE_INTERVAL_MINUTES * 60000 ||
           (typeof rawPrice !== 'string' && typeof rawPrice !== 'number') ||
           rawPrice === '' || !Number.isFinite(price)) {
-        throw new Error('EnergyZero API contains an invalid time or price; calendar not updated.');
+        throw new Error(CALENDAR_MESSAGES.ERROR_MESSAGES.energyZeroInvalidTimeOrPrice);
       }
       return {
         start: start,
@@ -123,12 +161,12 @@ function scheduleCheapestElectricity() {
   if (quarterHours.length === 0 ||
       quarterHours[0].start.getTime() !== requestedDayStart.getTime() ||
       quarterHours[quarterHours.length - 1].end.getTime() !== requestedDayEnd.getTime()) {
-    throw new Error('EnergyZero API did not return a complete price day; calendar not updated.');
+    throw new Error(CALENDAR_MESSAGES.ERROR_MESSAGES.energyZeroIncompletePriceDay);
   }
 
   for (let i = 1; i < quarterHours.length; i++) {
     if (quarterHours[i].start.getTime() !== quarterHours[i - 1].end.getTime()) {
-      throw new Error('EnergyZero API price intervals are not contiguous; calendar not updated.');
+      throw new Error(CALENDAR_MESSAGES.ERROR_MESSAGES.energyZeroNonContiguousIntervals);
     }
   }
 
@@ -145,7 +183,7 @@ function scheduleCheapestElectricity() {
   });
 
   if (hourlyPrices.some(hour => hour.prices.length !== 4)) {
-    throw new Error('Not all hours contain four quarter-hour prices; calendar not updated.');
+    throw new Error(CALENDAR_MESSAGES.ERROR_MESSAGES.incompleteHourPrices);
   }
 
   const intervals = hourlyPrices.map(hour => {
@@ -183,10 +221,10 @@ function scheduleCheapestElectricity() {
       average: average.toFixed(4)
     };
     const description = [
-      formatEventText(EVENT_TEXT.summary, textValues),
-      formatEventText(EVENT_TEXT.intervalPrice, textValues),
+      formatTextTemplate(EVENT_TEXT.summary, textValues),
+      formatTextTemplate(EVENT_TEXT.intervalPrice, textValues),
       ...(hasNegativePrice ? [EVENT_TEXT.negativePriceWarning] : []),
-      formatEventText(EVENT_TEXT.dailyAverage, textValues),
+      formatTextTemplate(EVENT_TEXT.dailyAverage, textValues),
       EVENT_TEXT.source
     ].join('\n');
 
@@ -233,45 +271,14 @@ function scheduleCheapestElectricity() {
     createEvent(eventStart, eventEnd, eventMinPrice, eventMaxPrice, eventHasNegativePrice);
   }
 
-  Logger.log(
-    `Calendar '${CALENDAR_NAME}' updated for ${tomorrowDate}. ` +
-    `${selectedHours.length} cheapest hours scheduled.`
-  );
-}
-
-/**
- * Runs at 23:00 to send tomorrow's calendar blocks to the Fox ESS scheduler.
- */
-function syncFoxESSForTomorrow() {
-  const calendar = getUniqueCalendar();
-
-  const todayInAmsterdam = Utilities.formatDate(new Date(), SCRIPT_TIME_ZONE, 'yyyy-MM-dd');
-  const [year, month, day] = todayInAmsterdam.split('-').map(Number);
-  const tomorrow = new Date(Date.UTC(year, month - 1, day + 1));
-  const dayAfterTomorrow = new Date(Date.UTC(year, month - 1, day + 2));
-  const tomorrowStart = Utilities.parseDate(
-    Utilities.formatDate(tomorrow, 'UTC', 'yyyy-MM-dd') + ' 00:00:00',
-    SCRIPT_TIME_ZONE,
-    'yyyy-MM-dd HH:mm:ss'
-  );
-  const tomorrowEnd = Utilities.parseDate(
-    Utilities.formatDate(dayAfterTomorrow, 'UTC', 'yyyy-MM-dd') + ' 00:00:00',
-    SCRIPT_TIME_ZONE,
-    'yyyy-MM-dd HH:mm:ss'
-  );
-
-  const events = calendar.getEvents(tomorrowStart, tomorrowEnd)
-    .filter(event => event.getTitle().toLowerCase() === EVENT_TEXT.title.toLowerCase());
-
-  const blocks = events.map(event => ({
-    start: event.getStartTime(),
-    end: event.getEndTime()
+  Logger.log(formatTextTemplate(CALENDAR_MESSAGES.LOG_messages.calendarUpdated, {
+    calendarName: CALENDAR_NAME,
+    date: tomorrowDate,
+    selectedHours: selectedHours.length
   }));
-
-  updateFoxChargeSchedule(blocks);
 }
 
-function formatEventText(template, values) {
+function formatTextTemplate(template, values) {
   return template.replace(/\{(\w+)\}/g, (match, key) => values[key]);
 }
 
@@ -280,179 +287,30 @@ function getUniqueCalendar() {
   if (calendars.length !== 1) {
     throw new Error(
       calendars.length === 0
-        ? `Calendar '${CALENDAR_NAME}' not found.`
-        : `Multiple calendars found with the name '${CALENDAR_NAME}'; please make the name unique.`
+        ? formatTextTemplate(CALENDAR_MESSAGES.ERROR_MESSAGES.calendarNotFound, {
+            calendarName: CALENDAR_NAME
+          })
+        : formatTextTemplate(CALENDAR_MESSAGES.ERROR_MESSAGES.multipleCalendarsFound, {
+            calendarName: CALENDAR_NAME
+          })
     );
   }
   return calendars[0];
 }
 
-function updateFoxChargeSchedule(blocks) {
-  const scriptProperties = PropertiesService.getScriptProperties();
-  const apiKey = scriptProperties.getProperty('FOX_API_KEY');
-  const deviceSN = scriptProperties.getProperty('FOX_DEVICE_SN');
-  const forcePowerWatts = Number(scriptProperties.getProperty('FOX_FD_POWER_W'));
-
-  if (!apiKey || !deviceSN) {
-    throw new Error('FOX_API_KEY or FOX_DEVICE_SN is missing in Script Properties.');
-  }
-  if (!Number.isInteger(forcePowerWatts) || forcePowerWatts <= 0) {
-    throw new Error('FOX_FD_POWER_W must be set as a positive integer number of watts in Script Properties.');
-  }
-  if (blocks.length === 0) {
-    throw new Error('No charging blocks found for tomorrow; existing Fox ESS schedule was not modified.');
+function getCalendarTimeZone() {
+  const timeZone = PropertiesService.getScriptProperties().getProperty('SCRIPT_TIME_ZONE');
+  if (!timeZone) {
+    throw new Error(CALENDAR_MESSAGES.ERROR_MESSAGES.missingTimeZone);
   }
 
-  const scheduler = foxApiPost(
-    '/op/v3/device/scheduler/get',
-    apiKey,
-    { deviceSN: deviceSN }
-  );
-  if (!scheduler || typeof scheduler !== 'object') {
-    throw new Error('Fox ESS did not return a valid Scheduler V3 configuration.');
-  }
-
-  const properties = scheduler.properties || {};
-  const workModeProperty = getFoxSchedulerProperty(properties, 'workmode');
-  const supportedModes = workModeProperty && workModeProperty.enumList;
-  let workMode = 'ForceCharge';
-  if (Array.isArray(supportedModes)) {
-    if (supportedModes.includes('ForceCharge(BAT)')) {
-      workMode = 'ForceCharge(BAT)';
-    } else if (!supportedModes.includes(workMode)) {
-      throw new Error('This Fox ESS device does not support the ForceCharge scheduler mode.');
-    }
-  }
-
-  const maxGroupCount = Number(scheduler.maxGroupCount);
-  if (Number.isFinite(maxGroupCount) && blocks.length > maxGroupCount) {
-    throw new Error(
-      `Fox ESS supports a maximum of ${maxGroupCount} scheduler blocks; ` +
-      `${blocks.length} blocks are required.`
-    );
-  }
-
-  const scheduleValues = {
-    minSocOnGrid: 10,
-    fdSoc: 100,
-    fdPwr: forcePowerWatts,
-    maxSoc: 100
-  };
-  Object.keys(scheduleValues).forEach(fieldName => {
-    validateFoxSchedulerValue(properties, fieldName, scheduleValues[fieldName]);
-  });
-
-  const groups = blocks.map(block => {
-    const startHour = Number(Utilities.formatDate(block.start, SCRIPT_TIME_ZONE, 'H'));
-    const startMinute = Number(Utilities.formatDate(block.start, SCRIPT_TIME_ZONE, 'm'));
-    let endHour = Number(Utilities.formatDate(block.end, SCRIPT_TIME_ZONE, 'H'));
-    let endMinute = Number(Utilities.formatDate(block.end, SCRIPT_TIME_ZONE, 'm'));
-
-    if (endHour === 0 && endMinute === 0) {
-      endHour = 23;
-      endMinute = 59;
-    }
-
-    return {
-      workMode: workMode,
-      startHour: startHour,
-      startMinute: startMinute,
-      endHour: endHour,
-      endMinute: endMinute,
-      extraParam: scheduleValues
-    };
-  });
-
-  foxApiPost(
-    '/op/v3/device/scheduler/enable',
-    apiKey,
-    {
-      deviceSN: deviceSN,
-      isDefault: false,
-      groups: groups
-    }
-  );
-
-  Logger.log(
-    `Fox ESS Mode Scheduler updated with ${groups.length} charging block(s) ` +
-    `for tomorrow (${workMode}, ${forcePowerWatts} W).`
-  );
-}
-
-function foxApiPost(path, apiKey, payload) {
-  const response = UrlFetchApp.fetch(FOX_BASE_URL + path, {
-    method: 'post',
-    contentType: 'application/json',
-    headers: createFoxRequestHeaders(path, apiKey),
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true
-  });
-  const status = response.getResponseCode();
-  const responseText = response.getContentText();
-  if (status < 200 || status >= 300) {
-    throw new Error(`Fox ESS API returned HTTP ${status}: ${responseText || '(empty response)'}`);
-  }
-
-  let envelope;
   try {
-    envelope = JSON.parse(responseText);
+    Utilities.formatDate(new Date(), timeZone, 'yyyy-MM-dd');
   } catch (error) {
-    throw new Error(
-      `Fox ESS API did not return a valid JSON response (HTTP ${status}): ` +
-      `${responseText || '(empty response)'}`
-    );
+    throw new Error(formatTextTemplate(CALENDAR_MESSAGES.ERROR_MESSAGES.invalidTimeZone, {
+      timeZone: timeZone,
+      details: error.message
+    }));
   }
-  if (!envelope || typeof envelope !== 'object') {
-    throw new Error(`Fox ESS API returned an invalid response: ${responseText}`);
-  }
-  if (envelope.errno !== 0) {
-    throw new Error(`Fox ESS API error (${envelope.errno}): ${responseText}`);
-  }
-
-  return envelope.result;
-}
-
-function getFoxSchedulerProperty(properties, name) {
-  const key = Object.keys(properties).find(
-    propertyName => propertyName.toLowerCase() === name.toLowerCase()
-  );
-  return key ? properties[key] : null;
-}
-
-function validateFoxSchedulerValue(properties, fieldName, value) {
-  const property = getFoxSchedulerProperty(properties, fieldName);
-  const range = property && property.range;
-  if (!range) {
-    return;
-  }
-
-  const minimum = Number(range.min);
-  const maximum = Number(range.max);
-  if ((Number.isFinite(minimum) && value < minimum) ||
-      (Number.isFinite(maximum) && value > maximum)) {
-    throw new Error(
-      `FOX scheduler value ${fieldName}=${value} is outside the device range ` +
-      `${range.min}-${range.max}.`
-    );
-  }
-}
-
-function createFoxRequestHeaders(path, apiKey) {
-  const timestamp = Date.now().toString();
-  const rawSignature = `${path}\r\n${apiKey}\r\n${timestamp}`;
-  const signatureBytes = Utilities.computeDigest(
-    Utilities.DigestAlgorithm.MD5,
-    rawSignature,
-    Utilities.Charset.UTF_8
-  );
-  const signature = signatureBytes
-    .map(byte => ('0' + (byte & 0xff).toString(16)).slice(-2))
-    .join('');
-
-  return {
-    token: apiKey,
-    timestamp: timestamp,
-    signature: signature,
-    lang: 'en'
-  };
+  return timeZone;
 }
