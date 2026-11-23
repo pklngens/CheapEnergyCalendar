@@ -6,6 +6,8 @@ const FOX_PRICE_INTERVAL_MINUTES = 15;
 const FOX_FULL_CHARGE_QUARTERS = 8;
 const FOX_SKIP_CHARGING_SOC = 85;
 const FOX_DISCHARGE_PRICE_MULTIPLIER = 1.20;
+const FOX_MIDDAY_TOPUP_QUARTERS = 6;
+const FOX_MIDDAY_SPREAD_MULTIPLIER = 1.20;
 const FOX_MESSAGES = {
   ERROR_MESSAGES: {
     missingTimeZone:
@@ -52,7 +54,9 @@ const FOX_MESSAGES = {
     scheduleUpdated:
       'Fox ESS scheduler updated for {date}: SoC {currentSoc}%, ' +
       '{requiredQuarters} charging quarter(s), {groupCount} group(s), ' +
-      'discharge threshold {minDischargePrice} EUR/kWh.'
+      'overnight discharge threshold {minDischargePrice} EUR/kWh, ' +
+      'after-15:00 threshold {eveningDischargePrice} EUR/kWh; ' +
+      'midday top-up {middayTopUp}.'
   }
 };
 
@@ -222,15 +226,19 @@ function getFoxBatterySoc(apiKey, deviceSN) {
   return soc;
 }
 
-function findCheapestPriceWindow(intervals, quarterCount) {
-  if (!Number.isInteger(quarterCount) || quarterCount < 1 ||
-      quarterCount > intervals.length) {
+function findCheapestPriceWindow(intervals, quarterCount, startIndex, endIndex) {
+  const searchStart = startIndex === undefined ? 0 : startIndex;
+  const searchEnd = endIndex === undefined ? intervals.length : endIndex;
+  if (!Number.isInteger(searchStart) || !Number.isInteger(searchEnd) ||
+      searchStart < 0 || searchEnd > intervals.length || searchStart >= searchEnd ||
+      !Number.isInteger(quarterCount) || quarterCount < 1 ||
+      quarterCount > searchEnd - searchStart) {
     throw new Error(FOX_MESSAGES.ERROR_MESSAGES.requiredChargingTimeExceedsPriceDay);
   }
 
-  let cheapestStart = 0;
+  let cheapestStart = searchStart;
   let cheapestAverage = Infinity;
-  for (let start = 0; start <= intervals.length - quarterCount; start++) {
+  for (let start = searchStart; start <= searchEnd - quarterCount; start++) {
     let totalPrice = 0;
     for (let offset = 0; offset < quarterCount; offset++) {
       totalPrice += intervals[start + offset].price;
@@ -249,19 +257,43 @@ function createFoxBatteryPlan(prices, currentSoc) {
   const requiredQuarters = currentSoc >= FOX_SKIP_CHARGING_SOC
     ? 0
     : Math.ceil(((100 - currentSoc) / 90) * FOX_FULL_CHARGE_QUARTERS);
-  // When charging is skipped, use a hypothetical window only to set the discharge threshold.
+  // When overnight charging is skipped, use its hypothetical window for the threshold.
   const referenceQuarters = requiredQuarters || FOX_FULL_CHARGE_QUARTERS;
-  const priceWindow = findCheapestPriceWindow(prices, referenceQuarters);
-  const minDischargePrice = priceWindow.averagePrice * FOX_DISCHARGE_PRICE_MULTIPLIER;
-  const chargeWindowEnd = priceWindow.start + requiredQuarters;
+  const overnightWindow = findCheapestPriceWindow(prices, referenceQuarters, 0, 28);
+  const overnightWindowEnd = overnightWindow.start + requiredQuarters;
+  const middayWindow = findCheapestPriceWindow(
+    prices,
+    FOX_MIDDAY_TOPUP_QUARTERS,
+    40,
+    60
+  );
+  if (prices.length < 84) {
+    throw new Error(FOX_MESSAGES.ERROR_MESSAGES.requiredChargingTimeExceedsPriceDay);
+  }
+  const eveningAveragePrice = prices
+    .slice(64, 84)
+    .reduce((total, interval) => total + interval.price, 0) / 20;
+  const middayTopUpScheduled =
+    eveningAveragePrice >= middayWindow.averagePrice * FOX_MIDDAY_SPREAD_MULTIPLIER;
+  const overnightDischargeThreshold =
+    overnightWindow.averagePrice * FOX_DISCHARGE_PRICE_MULTIPLIER;
+  const middayDischargeThreshold =
+    middayWindow.averagePrice * FOX_DISCHARGE_PRICE_MULTIPLIER;
 
   const intervals = prices.map((interval, index) => {
     let workMode;
     if (requiredQuarters > 0 &&
-        index >= priceWindow.start && index < chargeWindowEnd) {
+        index >= overnightWindow.start && index < overnightWindowEnd) {
+      workMode = 'ForceCharge';
+    } else if (middayTopUpScheduled &&
+        index >= middayWindow.start &&
+        index < middayWindow.start + FOX_MIDDAY_TOPUP_QUARTERS) {
       workMode = 'ForceCharge';
     } else {
-      workMode = interval.price >= minDischargePrice ? 'SelfUse' : 'Backup';
+      const dischargeThreshold = middayTopUpScheduled && index >= 60
+        ? middayDischargeThreshold
+        : overnightDischargeThreshold;
+      workMode = interval.price >= dischargeThreshold ? 'SelfUse' : 'Backup';
     }
     return {
       start: interval.start,
@@ -273,8 +305,15 @@ function createFoxBatteryPlan(prices, currentSoc) {
   return {
     currentSoc: currentSoc,
     requiredQuarters: requiredQuarters,
-    averageChargePrice: priceWindow.averagePrice,
-    minDischargePrice: minDischargePrice,
+    averageChargePrice: overnightWindow.averagePrice,
+    minDischargePrice: overnightDischargeThreshold,
+    eveningDischargePrice: middayTopUpScheduled
+      ? middayDischargeThreshold
+      : overnightDischargeThreshold,
+    middayTopUpScheduled: middayTopUpScheduled,
+    middayWindow: middayWindow,
+    middayWindowEnd: middayWindow.start + FOX_MIDDAY_TOPUP_QUARTERS,
+    middayAveragePrice: middayWindow.averagePrice,
     intervals: intervals
   };
 }
@@ -410,7 +449,13 @@ function updateFoxChargeSchedule() {
     currentSoc: currentSoc,
     requiredQuarters: plan.requiredQuarters,
     groupCount: groups.length,
-    minDischargePrice: plan.minDischargePrice.toFixed(4)
+    minDischargePrice: plan.minDischargePrice.toFixed(4),
+    eveningDischargePrice: plan.eveningDischargePrice.toFixed(4),
+    middayTopUp: (plan.middayTopUpScheduled ? 'scheduled ' : 'not scheduled; candidate ') +
+      Utilities.formatDate(prices[plan.middayWindow.start].start, timeZone, 'HH:mm') +
+      '-' +
+      Utilities.formatDate(prices[plan.middayWindowEnd - 1].end, timeZone, 'HH:mm') +
+      ' at ' + plan.middayAveragePrice.toFixed(4) + ' EUR/kWh'
   }));
 }
 

@@ -38,15 +38,24 @@ The manager:
 
 - calculates required charging time from SoC, using eight quarter-hours as the
   10%-to-100% baseline at 1200 W;
-- selects the cheapest contiguous window for the required charging duration;
-- uses a hypothetical cheapest eight-quarter window for the profitability
-  reference when SoC is at least 85%, even though it skips charging;
-- sets **ForceCharge** for the charging window;
-- sets **SelfUse** at or above 1.20 times the reference price and **Backup**
-  below it;
+- schedules the primary charge in the cheapest contiguous window from 00:00 to
+  07:00;
+- uses a hypothetical cheapest eight-quarter overnight window as the discharge
+  reference when SoC is at least 85%, even though it skips the primary charge;
+- looks for a six-quarter (90-minute) top-up in the cheapest window from 10:00
+  to 15:00, and schedules it only when the average price from 16:00 to 21:00 is
+  at least 1.20 times the candidate top-up window's average price;
+- sets **ForceCharge** for each scheduled charging window;
+- before 15:00, sets **SelfUse** when the price is at least 1.20 times the
+  overnight reference price, and **Backup** below it; after 15:00, uses 1.20
+  times the midday top-up price as the threshold if that top-up was scheduled,
+  otherwise it continues using the overnight reference;
 - merges adjacent intervals with identical modes;
 - rejects the plan if the merged group count exceeds Fox ESS's reported
   `maxGroupCount`, and does not replace the existing schedule.
+
+The midday top-up is evaluated independently of the 85% primary-charge skip:
+it can still be scheduled if the price-spread condition is met.
 
 `SelfUse` relies on the existing HomeWizard P1 zero-export setup. The battery
 manager does not communicate with the P1 meter. It also stops safely on the
@@ -99,8 +108,9 @@ Calendar constants, event text, the 16:00 trigger hour, and the five-hour
 selection are at the top of `CheapEnergyCalendar.gs`.
 
 Battery constants, including the 23:00 trigger hour, 15-minute interval,
-eight-quarter baseline, 85% SoC skip threshold, and 1.20 discharge multiplier,
-are at the top of `FoxBatteryManager.gs`.
+eight-quarter baseline, 85% SoC skip threshold, 1.20 discharge multiplier,
+six-quarter midday top-up duration, and 1.20 midday spread multiplier, are at
+the top of `FoxBatteryManager.gs`.
 
 The calendar title and description templates are in `EVENT_TEXT`. If localized,
 preserve the `{hours}`, `{minPrice}`, `{maxPrice}`, and `{average}` placeholders.
