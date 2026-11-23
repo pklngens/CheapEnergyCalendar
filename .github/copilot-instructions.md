@@ -49,10 +49,19 @@ up or reinstalling its respective trigger.
   final group count against the device-reported `maxGroupCount` and do not write
   if it exceeds the limit.
 - Use epoch timestamps for interval continuity and hour grouping. The calendar
-  trigger runs at 16:00 in `Europe/Amsterdam` to allow for price publication in
-  both winter and summer. The time zone comes from the `SCRIPT_TIME_ZONE`
-  Script Property; reinstall both triggers after changing it. Avoid depending
-  on the machine's local time zone.
+  trigger runs at 16:00 and the battery trigger at 23:00 in
+  `Europe/Amsterdam` to allow for price publication and overnight scheduling.
+  The time zone comes from the `SCRIPT_TIME_ZONE` Script Property; reinstall
+  both triggers after changing it. Avoid depending on the machine's local time
+  zone.
+- The battery scheduler must reject the autumn repeated-hour DST transition
+  because local schedule groups cannot distinguish the repeated hour. Preserve
+  the existing validation that prevents overwriting the Fox ESS schedule when
+  the plan is invalid or exceeds `maxGroupCount`.
+- The read-only `test-foxess-scheduler-get.ps1` and replacement/restore
+  `test-foxess-scheduler-replace-restore.ps1` scripts are optional live Fox
+  ESS tools. Keep replacement tests explicitly guarded, preserve restore
+  behavior, and document that they can cause charging.
 - All user-facing alerts, thrown errors, and log strings in this codebase must
   be written in English. Existing calendar events are matched by title without
   regard to case, and adjacent selected hours are represented by a single
