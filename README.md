@@ -80,6 +80,7 @@ manager does not communicate with the P1 meter.
    | Property | Required for | Purpose |
    | --- | --- | --- |
    | `SCRIPT_TIME_ZONE` | Both scripts | Local time zone; use `Europe/Amsterdam` for Dutch time. |
+   | `CALENDAR_NAME` | Calendar script | Exact calendar name, for example `Huis`. |
    | `FOX_API_KEY` | Battery manager | Fox ESS API key. |
    | `FOX_DEVICE_SN` | Battery manager | Fox ESS inverter serial number. |
    | `FOX_FD_POWER_W` | Battery manager | Supported schedule power in watts, for example `1200` for the MQ2200-M-AC setup. |
@@ -87,8 +88,8 @@ manager does not communicate with the P1 meter.
    | `SUPPLIER_FEE_EUR_KWH` | Battery manager (optional) | Supplier purchase fee excluding VAT in EUR/kWh, default `0`. |
    | `VAT_PERCENTAGE` | Battery manager (optional) | VAT percentage, for example `21`; default `0`. |
 
-4. Set `CALENDAR_NAME` in `CheapEnergyCalendar.gs` to the exact calendar name.
-   The default is `Huis`. There must be exactly one calendar with that name.
+4. Set `CALENDAR_NAME` in Script Properties to the exact calendar name. There
+   must be exactly one calendar with that name.
 5. Save the project and authorize it. The scripts require Google Calendar
    access, external API access, and Script Property access as applicable.
 

@@ -1,4 +1,3 @@
-const CALENDAR_NAME = 'Huis';
 const CHEAP_PRICE_COLOR = CalendarApp.EventColor.PALE_GREEN;
 const NEGATIVE_PRICE_COLOR = CalendarApp.EventColor.BLUE;
 const PRICE_API_URL = 'https://public.api.energyzero.nl/public/v1/prices';
@@ -28,6 +27,8 @@ const CALENDAR_MESSAGES = {
     incompleteHourPrices:
       'The price data does not contain four quarter-hour prices for every hour; ' +
       'the calendar was not updated.',
+    missingCalendarName:
+      'CALENDAR_NAME is missing from Script Properties. Set it to the exact calendar name.',
     calendarNotFound: "Calendar '{calendarName}' not found.",
     multipleCalendarsFound:
       "Multiple calendars found with the name '{calendarName}'; please make the name unique.",
@@ -203,7 +204,8 @@ function scheduleCheapestElectricity() {
     .slice(0, Math.min(CHEAPEST_HOURS, intervals.length));
   const selectedHourTimes = new Set(selectedHours.map(item => item.start.getTime()));
 
-  const calendar = getUniqueCalendar();
+  const calendarName = getCalendarName();
+  const calendar = getUniqueCalendar(calendarName);
   const dayStart = intervals[0].start;
   const dayEnd = intervals[intervals.length - 1].end;
 
@@ -272,7 +274,7 @@ function scheduleCheapestElectricity() {
   }
 
   Logger.log(formatTextTemplate(CALENDAR_MESSAGES.LOG_messages.calendarUpdated, {
-    calendarName: CALENDAR_NAME,
+    calendarName: calendarName,
     date: tomorrowDate,
     selectedHours: selectedHours.length
   }));
@@ -282,16 +284,24 @@ function formatTextTemplate(template, values) {
   return template.replace(/\{(\w+)\}/g, (match, key) => values[key]);
 }
 
-function getUniqueCalendar() {
-  const calendars = CalendarApp.getCalendarsByName(CALENDAR_NAME);
+function getCalendarName() {
+  const calendarName = PropertiesService.getScriptProperties().getProperty('CALENDAR_NAME');
+  if (!calendarName || !calendarName.trim()) {
+    throw new Error(CALENDAR_MESSAGES.ERROR_MESSAGES.missingCalendarName);
+  }
+  return calendarName;
+}
+
+function getUniqueCalendar(calendarName) {
+  const calendars = CalendarApp.getCalendarsByName(calendarName);
   if (calendars.length !== 1) {
     throw new Error(
       calendars.length === 0
         ? formatTextTemplate(CALENDAR_MESSAGES.ERROR_MESSAGES.calendarNotFound, {
-            calendarName: CALENDAR_NAME
+            calendarName: calendarName
           })
         : formatTextTemplate(CALENDAR_MESSAGES.ERROR_MESSAGES.multipleCalendarsFound, {
-            calendarName: CALENDAR_NAME
+            calendarName: calendarName
           })
     );
   }
