@@ -15,6 +15,8 @@ battery flow is implemented in `syncFoxESSForTomorrow`. Keep the calendar and
 battery triggers separate: `installCalendarTrigger` manages only the calendar
 handler, while `installFoxBatteryTrigger` manages only the battery handler.
 Keep the setup and behavior documented in `README.md` aligned with the scripts.
+When changing scheduling behavior or tuning constants, update the matching
+README behavior description and constants summary in the same change.
 
 ## Build, test, and lint
 
