@@ -7,6 +7,7 @@ const FOX_PRICE_INTERVAL_MINUTES = 15;
 const FOX_FULL_CHARGE_QUARTERS = 8;
 const FOX_SKIP_CHARGING_SOC = 85;
 const FOX_DISCHARGE_PRICE_MULTIPLIER = 1.20;
+const FOX_MIN_DISCHARGE_SPREAD_EUR = 0.045;
 const FOX_WEEKEND_MORNING_MULTIPLIER = 1.28;
 const FOX_MIDDAY_TOPUP_QUARTERS = 6;
 const FOX_MIDDAY_SPREAD_MULTIPLIER = 1.20;
@@ -402,9 +403,8 @@ function getFoxAveragePriceInHours(prices, timeZone, startHour, endHour) {
 
 function getFoxDischargeThreshold(referencePrice, multiplier) {
   const threshold = referencePrice * multiplier;
-  return referencePrice <= 0
-    ? Math.max(threshold, referencePrice + 0.02)
-    : threshold;
+  const minimumThreshold = referencePrice + FOX_MIN_DISCHARGE_SPREAD_EUR;
+  return Math.max(threshold, minimumThreshold);
 }
 
 function createFoxBatteryPlan(prices, currentSoc, timeZone, targetDate, options) {

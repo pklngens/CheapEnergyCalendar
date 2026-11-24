@@ -52,7 +52,7 @@ The manager:
   that top-up was scheduled, otherwise it continues using the overnight reference;
 - uses all-in consumer prices, adding the optional supplier fee and VAT to the
   wholesale price and energy tax; non-positive reference prices use a minimum
-  0.02 EUR/kWh discharge margin;
+  0.045 EUR/kWh discharge spread above the charging reference;
 - smooths isolated single-quarter mode changes: **SelfUse** between
   **Backup** intervals becomes **Backup**, and **Backup** between contiguous
   **SelfUse** intervals becomes **SelfUse**;
