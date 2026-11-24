@@ -47,10 +47,13 @@ The manager:
   at least 1.20 times the candidate top-up window's average price;
 - sets **ForceCharge** for each scheduled charging window;
 - before the evening start (17:00 on weekdays, 15:00 on weekends), sets
-  **SelfUse** at 1.20 times the overnight reference on weekdays and 1.28 times
-  on weekends, and **Backup** below the threshold; from the evening start, it
-  uses 1.20 times the midday top-up price as the threshold if that top-up was
-  scheduled, otherwise it continues using the overnight reference, with either
+  **SelfUse** at 1.20 times the overnight reference on weekdays when a midday
+  top-up is scheduled, 1.35 times on weekdays without a scheduled top-up, and
+  1.28 times on weekends; without a weekday top-up, the morning threshold is
+  also at least 80% of the average price from 16:00 to 21:00. It sets
+  **Backup** below the threshold; from the evening start, it uses 1.20 times
+  the midday top-up price as the threshold if that top-up was scheduled,
+  otherwise it continues using the overnight reference, with either evening
   threshold raised to at least 85% of the average price from 16:00 to 21:00;
 - uses all-in consumer prices, adding the optional supplier fee and VAT to the
   wholesale price and energy tax; non-positive reference prices use a minimum
@@ -126,9 +129,10 @@ selection are at the top of `CheapEnergyCalendar.gs`.
 
 Battery constants, including the 23:00 trigger hour, 15-minute interval,
 eight-quarter baseline, 85% SoC skip threshold, 1.20 discharge multiplier,
-1.28 weekend morning multiplier, 17:00 weekday and 15:00 weekend evening
-starts, six-quarter midday top-up duration, and 1.20 midday spread multiplier,
-are at the top of `FoxBatteryManager.gs`. Put
+1.28 weekend morning multiplier, 1.35 weekday morning multiplier when no
+midday top-up is scheduled, 17:00 weekday and 15:00 weekend evening starts,
+six-quarter midday top-up duration, and 1.20 midday spread multiplier, are at
+the top of `FoxBatteryManager.gs`. Put
 supplier-specific taxes, fees, and VAT in the optional Script Properties rather
 than source control.
 

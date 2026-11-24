@@ -9,6 +9,7 @@ const FOX_SKIP_CHARGING_SOC = 85;
 const FOX_DISCHARGE_PRICE_MULTIPLIER = 1.20;
 const FOX_MIN_DISCHARGE_SPREAD_EUR = 0.045;
 const FOX_WEEKEND_MORNING_MULTIPLIER = 1.28;
+const FOX_WEEKDAY_NO_MIDDAY_MORNING_MULTIPLIER = 1.35;
 const FOX_WEEKDAY_EVENING_START_HOUR = 17;
 const FOX_WEEKEND_EVENING_START_HOUR = 15;
 const FOX_MIDDAY_TOPUP_QUARTERS = 6;
@@ -448,9 +449,14 @@ function createFoxBatteryPlan(prices, currentSoc, timeZone, targetDate, options)
     : FOX_WEEKDAY_EVENING_START_HOUR;
   const morningMultiplier = isWeekend
     ? FOX_WEEKEND_MORNING_MULTIPLIER
-    : FOX_DISCHARGE_PRICE_MULTIPLIER;
-  const morningDischargeThreshold =
+    : middayTopUpScheduled
+      ? FOX_DISCHARGE_PRICE_MULTIPLIER
+      : FOX_WEEKDAY_NO_MIDDAY_MORNING_MULTIPLIER;
+  const baseMorningThreshold =
     getFoxDischargeThreshold(overnightWindow.averagePrice, morningMultiplier);
+  const morningDischargeThreshold = !isWeekend && !middayTopUpScheduled
+    ? Math.max(baseMorningThreshold, eveningAveragePrice * 0.80)
+    : baseMorningThreshold;
   const middayDischargeThreshold = middayWindow
     ? getFoxDischargeThreshold(
       middayWindow.averagePrice,
