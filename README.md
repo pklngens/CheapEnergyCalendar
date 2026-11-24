@@ -46,18 +46,22 @@ The manager:
   to 15:00, and schedules it only when the average price from 16:00 to 21:00 is
   at least 1.20 times the candidate top-up window's average price;
 - sets **ForceCharge** for each scheduled charging window;
-- before the evening start (17:00 on weekdays, 15:00 on weekends), sets
-  **SelfUse** at 1.20 times the overnight reference on weekdays when a midday
-  top-up is scheduled, 1.35 times on weekdays without a scheduled top-up, and
-  1.28 times on weekends; without a weekday top-up, the morning threshold is
-  also at least 80% of the average price from 16:00 to 21:00. It sets
-  **Backup** below the threshold; from the evening start, it uses 1.20 times
-  the midday top-up price as the threshold if that top-up was scheduled,
-  otherwise it continues using the overnight reference, with either evening
-  threshold raised to at least 85% of the average price from 16:00 to 21:00;
 - uses all-in consumer prices, adding the optional supplier fee and VAT to the
-  wholesale price and energy tax; non-positive reference prices use a minimum
-  0.045 EUR/kWh discharge spread above the charging reference;
+  wholesale price and energy tax. The base discharge threshold is the higher
+  of the reference price multiplied by its multiplier and the reference price
+  plus 0.045 EUR/kWh;
+- applies these thresholds to non-charging intervals:
+
+  | Time | Condition | Threshold |
+  | --- | --- | --- |
+  | Before 17:00 on weekdays or 15:00 on weekends | Weekday with a scheduled midday top-up | Base threshold using the overnight reference and 1.20 multiplier |
+  | Before 17:00 on weekdays | Weekday without a scheduled midday top-up | Higher of the base threshold using the overnight reference and 1.35 multiplier, or 80% of the 16:00 to 21:00 average price |
+  | Before 15:00 on weekends | Weekend | Base threshold using the overnight reference and 1.28 multiplier |
+  | From the evening start (17:00 weekdays, 15:00 weekends) | Midday top-up scheduled | Higher of the base threshold using the top-up reference and 1.20 multiplier, or 85% of the 16:00 to 21:00 average price |
+  | From the evening start (17:00 weekdays, 15:00 weekends) | No midday top-up scheduled | Higher of the base threshold using the overnight reference and 1.20 multiplier, or 85% of the 16:00 to 21:00 average price |
+
+  At or above the applicable threshold, the mode is **SelfUse**; below it,
+  the mode is **Backup**. Scheduled charging intervals remain **ForceCharge**.
 - smooths isolated single-quarter mode changes: **SelfUse** between
   **Backup** intervals becomes **Backup**, and **Backup** between contiguous
   **SelfUse** intervals becomes **SelfUse**;
