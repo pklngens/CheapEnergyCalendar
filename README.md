@@ -53,7 +53,9 @@ The manager:
 - uses all-in consumer prices, adding the optional supplier fee and VAT to the
   wholesale price and energy tax; non-positive reference prices use a minimum
   0.02 EUR/kWh discharge margin;
-- converts isolated single-quarter **SelfUse** intervals to **Backup**;
+- smooths isolated single-quarter mode changes: **SelfUse** between
+  **Backup** intervals becomes **Backup**, and **Backup** between contiguous
+  **SelfUse** intervals becomes **SelfUse**;
 - merges adjacent intervals with identical modes;
 - rejects the plan if the merged group count exceeds Fox ESS's reported
   `maxGroupCount`, and does not replace the existing schedule.

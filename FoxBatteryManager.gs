@@ -497,6 +497,16 @@ function createFoxBatteryPlan(prices, currentSoc, timeZone, targetDate, options)
     }
   }
 
+  for (let i = 1; i < intervals.length - 1; i++) {
+    if (antiChatterModes[i] === 'Backup' &&
+        antiChatterModes[i - 1] === 'SelfUse' &&
+        antiChatterModes[i + 1] === 'SelfUse' &&
+        intervals[i - 1].clockIndex === intervals[i].clockIndex - 1 &&
+        intervals[i + 1].clockIndex === intervals[i].clockIndex + 1) {
+      intervals[i].workMode = 'SelfUse';
+    }
+  }
+
   return {
     currentSoc: currentSoc,
     requiredQuarters: requiredQuarters,
