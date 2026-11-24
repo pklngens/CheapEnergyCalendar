@@ -46,21 +46,29 @@ The manager:
   to 15:00, and schedules it only when the average price from 16:00 to 21:00 is
   at least 1.20 times the candidate top-up window's average price;
 - sets **ForceCharge** for each scheduled charging window;
-- before 15:00, sets **SelfUse** when the price is at least 1.20 times the
-  overnight reference price, and **Backup** below it; after 15:00, uses 1.20
-  times the midday top-up price as the threshold if that top-up was scheduled,
-  otherwise it continues using the overnight reference;
+- before 15:00, sets **SelfUse** at 1.20 times the overnight reference on
+  weekdays and 1.28 times on weekends, and **Backup** below the threshold;
+  after 15:00, it uses 1.20 times the midday top-up price as the threshold if
+  that top-up was scheduled, otherwise it continues using the overnight reference;
+- uses all-in consumer prices, adding the optional supplier fee and VAT to the
+  wholesale price and energy tax; non-positive reference prices use a minimum
+  0.02 EUR/kWh discharge margin;
+- converts isolated single-quarter **SelfUse** intervals to **Backup**;
 - merges adjacent intervals with identical modes;
 - rejects the plan if the merged group count exceeds Fox ESS's reported
   `maxGroupCount`, and does not replace the existing schedule.
 
-The midday top-up is evaluated independently of the 85% primary-charge skip:
-it can still be scheduled if the price-spread condition is met.
+The fixed six-quarter top-up in the 23:00 plan is evaluated independently of
+the 85% primary-charge skip. The 10:15 re-evaluation instead uses live SoC and
+may calculate zero required quarters.
+An additional trigger runs around 10:15, reads live SoC, and re-evaluates
+today's cheapest qualifying charge window from 10:30 to 15:00. It updates the
+schedule for the rest of the day. Price windows use local clock times; on the
+autumn clock change, repeated quarter-hour prices are averaged by local time
+before planning so the schedule contains no duplicate clock slots.
 
 `SelfUse` relies on the existing HomeWizard P1 zero-export setup. The battery
-manager does not communicate with the P1 meter. It also stops safely on the
-autumn clock-change day because Fox ESS schedule groups use local clock times
-and cannot distinguish repeated hours.
+manager does not communicate with the P1 meter.
 
 ## Setup
 
@@ -75,6 +83,9 @@ and cannot distinguish repeated hours.
    | `FOX_API_KEY` | Battery manager | Fox ESS API key. |
    | `FOX_DEVICE_SN` | Battery manager | Fox ESS inverter serial number. |
    | `FOX_FD_POWER_W` | Battery manager | Supported schedule power in watts, for example `1200` for the MQ2200-M-AC setup. |
+   | `ENERGY_TAX_EUR_KWH` | Battery manager (optional) | Energy tax including VAT in EUR/kWh, default `0`. |
+   | `SUPPLIER_FEE_EUR_KWH` | Battery manager (optional) | Supplier purchase fee excluding VAT in EUR/kWh, default `0`. |
+   | `VAT_PERCENTAGE` | Battery manager (optional) | VAT percentage, for example `21`; default `0`. |
 
 4. Set `CALENDAR_NAME` in `CheapEnergyCalendar.gs` to the exact calendar name.
    The default is `Huis`. There must be exactly one calendar with that name.
@@ -88,11 +99,12 @@ Run the installer functions once per schedule:
 | Function | Action | Default time |
 | --- | --- | --- |
 | `installCalendarTrigger` | Installs or replaces only the calendar trigger | Approximately 16:00 |
-| `installFoxBatteryTrigger` | Installs or replaces only the battery trigger | Approximately 23:00 |
+| `installFoxBatteryTrigger` | Installs or replaces both battery triggers | Approximately 10:15 and 23:00 |
 
 For a manual calendar run, execute `scheduleCheapestElectricity`. For a manual
-battery run, execute `syncFoxESSForTomorrow`. Manual runs may update the target
-calendar or Fox ESS schedule immediately.
+battery run, execute `syncFoxESSForTomorrow` to plan tomorrow or
+`syncFoxESSForMidday` to re-evaluate today's remaining midday window. Manual runs
+may update the target calendar or Fox ESS schedule immediately.
 
 The two triggers are independent and should be installed separately. Re-run the
 matching installer after changing a trigger hour in the script. Re-run both
@@ -109,8 +121,10 @@ selection are at the top of `CheapEnergyCalendar.gs`.
 
 Battery constants, including the 23:00 trigger hour, 15-minute interval,
 eight-quarter baseline, 85% SoC skip threshold, 1.20 discharge multiplier,
-six-quarter midday top-up duration, and 1.20 midday spread multiplier, are at
-the top of `FoxBatteryManager.gs`.
+1.28 weekend morning multiplier, six-quarter midday top-up duration, and 1.20
+midday spread multiplier, are at the top of `FoxBatteryManager.gs`. Put
+supplier-specific taxes, fees, and VAT in the optional Script Properties rather
+than source control.
 
 The calendar title and description templates are in `EVENT_TEXT`. If localized,
 preserve the `{hours}`, `{minPrice}`, `{maxPrice}`, and `{average}` placeholders.
