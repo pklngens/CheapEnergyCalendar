@@ -9,6 +9,8 @@ const FOX_SKIP_CHARGING_SOC = 85;
 const FOX_DISCHARGE_PRICE_MULTIPLIER = 1.20;
 const FOX_MIN_DISCHARGE_SPREAD_EUR = 0.045;
 const FOX_WEEKEND_MORNING_MULTIPLIER = 1.28;
+const FOX_WEEKDAY_EVENING_START_HOUR = 17;
+const FOX_WEEKEND_EVENING_START_HOUR = 15;
 const FOX_MIDDAY_TOPUP_QUARTERS = 6;
 const FOX_MIDDAY_SPREAD_MULTIPLIER = 1.20;
 const FOX_MESSAGES = {
@@ -60,7 +62,7 @@ const FOX_MESSAGES = {
       'Fox ESS scheduler updated for {date}: SoC {currentSoc}%, ' +
       '{requiredQuarters} charging quarter(s), {groupCount} group(s), ' +
       'morning discharge threshold {minDischargePrice} EUR/kWh, ' +
-      'after-15:00 threshold {eveningDischargePrice} EUR/kWh; ' +
+      'after-{eveningStartHour}:00 threshold {eveningDischargePrice} EUR/kWh; ' +
       'midday top-up {middayTopUp}.'
   }
 };
@@ -440,7 +442,11 @@ function createFoxBatteryPlan(prices, currentSoc, timeZone, targetDate, options)
     eveningAveragePrice >=
       middayWindow.averagePrice * FOX_MIDDAY_SPREAD_MULTIPLIER);
   const weekday = Number(Utilities.formatDate(targetDate, timeZone, 'u'));
-  const morningMultiplier = weekday === 6 || weekday === 7
+  const isWeekend = weekday === 6 || weekday === 7;
+  const eveningStartHour = isWeekend
+    ? FOX_WEEKEND_EVENING_START_HOUR
+    : FOX_WEEKDAY_EVENING_START_HOUR;
+  const morningMultiplier = isWeekend
     ? FOX_WEEKEND_MORNING_MULTIPLIER
     : FOX_DISCHARGE_PRICE_MULTIPLIER;
   const morningDischargeThreshold =
@@ -451,12 +457,16 @@ function createFoxBatteryPlan(prices, currentSoc, timeZone, targetDate, options)
       FOX_DISCHARGE_PRICE_MULTIPLIER
     )
     : null;
-  const eveningDischargeThreshold = middayTopUpScheduled
+  const baseEveningThreshold = middayTopUpScheduled
     ? middayDischargeThreshold
     : getFoxDischargeThreshold(
       overnightWindow.averagePrice,
       FOX_DISCHARGE_PRICE_MULTIPLIER
     );
+  const eveningDischargeThreshold = Math.max(
+    baseEveningThreshold,
+    eveningAveragePrice * 0.85
+  );
   const primaryChargeScheduled = !middayOnly && requiredQuarters > 0;
   const intervals = prices.map(interval => {
     const clockIndex = interval.clockIndex === undefined
@@ -473,7 +483,7 @@ function createFoxBatteryPlan(prices, currentSoc, timeZone, targetDate, options)
         clockIndex < middayWindow.clockIndex + middayQuarterCount) {
       workMode = 'ForceCharge';
     } else {
-      const dischargeThreshold = hour >= 15
+      const dischargeThreshold = hour >= eveningStartHour
         ? eveningDischargeThreshold
         : morningDischargeThreshold;
       workMode = interval.price >= dischargeThreshold ? 'SelfUse' : 'Backup';
@@ -512,6 +522,7 @@ function createFoxBatteryPlan(prices, currentSoc, timeZone, targetDate, options)
     requiredQuarters: requiredQuarters,
     averageChargePrice: overnightWindow.averagePrice,
     minDischargePrice: morningDischargeThreshold,
+    eveningStartHour: eveningStartHour,
     eveningDischargePrice: eveningDischargeThreshold,
     middayTopUpScheduled: middayTopUpScheduled,
     middayWindow: middayWindow,
@@ -687,6 +698,7 @@ function updateFoxChargeSchedule(middayOnly) {
     requiredQuarters: plan.requiredQuarters,
     groupCount: groups.length,
     minDischargePrice: plan.minDischargePrice.toFixed(4),
+    eveningStartHour: plan.eveningStartHour,
     eveningDischargePrice: plan.eveningDischargePrice.toFixed(4),
     middayTopUp: plan.middayWindow
       ? (plan.middayTopUpScheduled ? 'scheduled ' : 'not scheduled; candidate ') +
