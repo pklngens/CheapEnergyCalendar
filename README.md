@@ -94,7 +94,9 @@ sufficiently charged for discharge thresholds without scheduling a midday
 top-up; the log still reports the top-up as not scheduled.
 An additional trigger runs around 10:15, reads live SoC, and re-evaluates
 today's cheapest qualifying charge window from 10:30 to 15:00. It updates the
-schedule for the rest of the day. Price windows use local clock times; on the
+schedule for the rest of the day. Elapsed intervals before 10:15 are collapsed
+into one leading mode matching the first active interval, conserving
+`maxGroupCount` schedule groups. Price windows use local clock times; on the
 autumn clock change, repeated quarter-hour prices are averaged by local time
 before planning so the schedule contains no duplicate clock slots.
 

@@ -148,6 +148,36 @@ test('a past negative-price interval is not force-charged in a midday re-evaluat
   assert.equal(plan.intervals[40].workMode, 'Backup');
 });
 
+test('midday re-evaluation collapses elapsed volatile intervals into one leading group', () => {
+  const context = createScriptContext();
+  const prices = createPrices(weekday);
+  for (let clockIndex = 0; clockIndex < 41; clockIndex++) {
+    prices[clockIndex].price = clockIndex % 2 === 0 ? 0.10 : 0.50;
+  }
+  const notBefore = new Date(weekday.getTime() + (10 * 60 + 15) * 60 * 1000);
+  const plan = createPlan(context, prices, 50, weekday, true, { notBefore });
+  const groups = context.mergeFoxScheduleGroups(plan.intervals, {
+    minSocOnGrid: 10,
+    fdSoc: 100,
+    fdPwr: 1200,
+    maxSoc: 100
+  }, 'UTC');
+  const leadingGroups = groups.filter(group =>
+    group.startHour < 10 || (group.startHour === 10 && group.startMinute < 15)
+  );
+
+  assert.ok(plan.intervals.slice(0, 41).every(
+    interval => interval.workMode === plan.intervals[41].workMode
+  ));
+  assert.equal(leadingGroups.length, 1);
+  assert.equal(leadingGroups[0].startHour, 0);
+  assert.equal(leadingGroups[0].startMinute, 0);
+  assert.ok(
+    leadingGroups[0].endHour > 10 ||
+    (leadingGroups[0].endHour === 10 && leadingGroups[0].endMinute >= 15)
+  );
+});
+
 test('negative wholesale price with non-negative all-in price does not force charge', () => {
   const context = createScriptContext();
   const prices = createPrices(weekday);

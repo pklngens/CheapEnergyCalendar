@@ -636,6 +636,20 @@ function createFoxBatteryPlan(prices, currentSoc, timeZone, targetDate, options)
     }
   }
 
+  if (middayOnly && planOptions.notBefore) {
+    const firstActiveInterval = intervals.find(
+      interval => interval.end > planOptions.notBefore
+    );
+    const leadingMode = firstActiveInterval
+      ? firstActiveInterval.workMode
+      : 'Backup';
+    intervals.forEach(interval => {
+      if (interval.end <= planOptions.notBefore) {
+        interval.workMode = leadingMode;
+      }
+    });
+  }
+
   return {
     currentSoc: currentSoc,
     requiredQuarters: requiredQuarters,
