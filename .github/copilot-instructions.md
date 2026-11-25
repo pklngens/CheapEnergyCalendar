@@ -54,11 +54,12 @@ tests with `& 'C:\Program Files\nodejs\node.exe' --test test-fox-battery-plan.js
   midday top-up eligibility and discharge threshold floors.
   It calculates the full-charge quarter count from the required
   `FOX_BATTERY_CAPACITY_WH`, configured `FOX_FD_POWER_W`, 90% charge efficiency,
-  15-minute interval duration, and `FOX_MIN_SOC_ON_GRID` (optional, defaults to
-  10; validate configured values as integers from 10 through 100). Scale
-  required quarters by the remaining SoC relative to the configured reserve
-  swing below 85%; at or above 85%, skip charging but use a hypothetical
-  cheapest full-charge-length window for the profitability reference. Preserve
+  and 15-minute interval duration. Calculate active `requiredQuarters` directly
+  from the remaining SoC to 100%, without scaling by `FOX_MIN_SOC_ON_GRID`.
+  This optional property defaults to 10, must be an integer from 10 through
+  100 when configured, and is sent to Fox ESS as `minSocOnGrid`. At or above
+  85%, skip charging and use the hypothetical full-charge window, whose size is
+  based on `FOX_MIN_SOC_ON_GRID`, as the profitability reference. Preserve
   sensible defaults in `createFoxBatteryPlan` for tests that omit the new
   options.
   Treat capacity as the connected battery's rated watt-hours (2110 Wh for the

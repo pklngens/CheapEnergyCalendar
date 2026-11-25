@@ -275,11 +275,11 @@ test('required charge quarters use remaining energy without double rounding', ()
   assert.equal(plan.requiredQuarters, 5);
 });
 
-test('raising the grid SoC reserve reduces the full-charge swing', () => {
+test('minSocOnGrid does not change active required charge quarters', () => {
   const context = createScriptContext();
   const prices = createPrices(weekday);
   const battery = { batteryCapacityWh: 2110, forcePowerWatts: 1200 };
-  const defaultReservePlan = createPlan(context, prices, 10, weekday, false, battery);
+  const defaultReservePlan = createPlan(context, prices, 20, weekday, false, battery);
   const raisedReservePlan = createPlan(context, prices, 20, weekday, false, {
     ...battery,
     minSocOnGrid: 20
@@ -289,9 +289,40 @@ test('raising the grid SoC reserve reduces the full-charge swing', () => {
     minSocOnGrid: 100
   });
 
-  assert.equal(defaultReservePlan.requiredQuarters, 8);
+  assert.equal(defaultReservePlan.requiredQuarters, 7);
   assert.equal(raisedReservePlan.requiredQuarters, 7);
   assert.equal(maximumReservePlan.requiredQuarters, 7);
+});
+
+test('raising minSocOnGrid narrows the skipped-charge reference window', () => {
+  const prices = createPrices(weekday).map(interval => ({
+    ...interval,
+    price: interval.clockIndex < 28
+      ? (interval.clockIndex + 1) / 100
+      : interval.price
+  }));
+  const battery = { batteryCapacityWh: 2110, forcePowerWatts: 1200 };
+  const defaultReservePlan = createPlan(
+    createScriptContext(),
+    prices,
+    85,
+    weekday,
+    false,
+    battery
+  );
+  const raisedReservePlan = createPlan(
+    createScriptContext(),
+    prices,
+    85,
+    weekday,
+    false,
+    { ...battery, minSocOnGrid: 20 }
+  );
+
+  assert.equal(defaultReservePlan.requiredQuarters, 0);
+  assert.equal(raisedReservePlan.requiredQuarters, 0);
+  assertPrice(defaultReservePlan.averageChargePrice, 0.045);
+  assertPrice(raisedReservePlan.averageChargePrice, 0.04);
 });
 
 test('a skipped charge uses a capacity-scaled full-charge reference window', () => {
