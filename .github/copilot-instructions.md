@@ -76,10 +76,11 @@ tests with `& 'C:\Program Files\nodejs\node.exe' --test test-fox-battery-plan.js
   The time zone comes from the `SCRIPT_TIME_ZONE` Script Property; reinstall
   both triggers after changing it. Avoid depending on the machine's local time
   zone.
-- The battery scheduler must reject the autumn repeated-hour DST transition
-  because local schedule groups cannot distinguish the repeated hour. Preserve
-  the existing validation that prevents overwriting the Fox ESS schedule when
-  the plan is invalid or exceeds `maxGroupCount`.
+- On the autumn repeated-hour DST transition, average duplicate quarter-hour
+  prices by local time before planning so schedule groups do not contain
+  duplicate local clock slots. Preserve the existing validation that prevents
+  overwriting the Fox ESS schedule when the plan is invalid or exceeds
+  `maxGroupCount`.
 - The read-only `test-foxess-scheduler-get.ps1` and replacement/restore
   `test-foxess-scheduler-replace-restore.ps1` scripts are optional live Fox
   ESS tools. Keep replacement tests explicitly guarded, preserve restore

@@ -13,6 +13,18 @@ Both scripts use the `base` price stream from the
 [EnergyZero public API](https://public.api.energyzero.nl/public/v1/prices).
 It is the market price in EUR/kWh excluding VAT, not a complete supplier bill.
 
+## Background & Real-world results
+
+This project started with a simple goal: automatically adding the cheapest electricity hours to our shared family calendar (`CheapEnergyCalendar.gs`) so everyone at home could easily see when to run the dishwasher or washing machine.
+
+Using a Fox ESS home battery, I initially relied on my energy supplier's built-in smart control. When that integration broke down and customer support remained unresponsive, I expanded the project with `FoxBatteryManager.gs`—an independent, transparent arbitrage script running on Google Apps Script using quarter-hour EPEX/EnergyZero prices.
+
+![Fox ESS Battery Performance](images/foxess-performance.png)
+
+* **Nov 7 – Nov 15, 2026:** Supplier-managed smart control (inconsistent charging/discharging cycles).
+* **Nov 16 – Nov 18, 2026:** Supplier integration disconnected; battery sat idle.
+* **Nov 20, 2026 onwards:** Controlled by `FoxBatteryManager.gs` — consistent daily cycles, taking advantage of both overnight lows and midday top-ups for evening peaks.
+
 ## Calendar script
 
 `scheduleCheapestElectricity` validates the API response for exactly four
