@@ -100,22 +100,61 @@ test('a full battery uses a zero evening floor when the evening average is negat
   const plan = createPlan(createScriptContext(), prices, 85);
 
   assertPrice(plan.eveningDischargePrice, 0);
-  assert.equal(plan.intervals[19 * 4].workMode, 'Backup');
-  assert.equal(plan.intervals[19 * 4 + 1].workMode, 'Backup');
+  assert.equal(plan.intervals[19 * 4].workMode, 'ForceCharge');
+  assert.equal(plan.intervals[19 * 4 + 1].workMode, 'ForceCharge');
 });
 
-test('anti-chatter still smooths an isolated negative-price quarter', () => {
+test('anti-chatter still smooths an isolated positive-price quarter', () => {
   const prices = createPrices(weekday, {
     evening: clockIndex => clockIndex >= 19 * 4 && clockIndex <= 20 * 4
-      ? clockIndex === 19 * 4 + 2 ? -0.01 : 0.02
-      : -0.12
+      ? clockIndex === 19 * 4 + 2 ? 0.01 : 0.02
+      : 0.02
   });
   const plan = createPlan(createScriptContext(), prices, 85);
 
-  assertPrice(plan.eveningDischargePrice, 0);
+  assert.ok(plan.eveningDischargePrice > 0);
   assert.equal(plan.intervals[19 * 4 + 1].workMode, 'SelfUse');
   assert.equal(plan.intervals[19 * 4 + 2].workMode, 'SelfUse');
   assert.equal(plan.intervals[19 * 4 + 3].workMode, 'SelfUse');
+});
+
+test('negative all-in prices charge outside scheduled windows without a top-up', () => {
+  const prices = createPrices(weekday, { evening: 0.05 });
+  prices[62].price = -0.01;
+  const plan = createPlan(createScriptContext(), prices, 50, weekday, false);
+
+  assert.equal(plan.middayTopUpScheduled, false);
+  assert.equal(plan.intervals[61].workMode, 'Backup');
+  assert.equal(plan.intervals[62].workMode, 'ForceCharge');
+  assert.equal(plan.intervals[63].workMode, 'Backup');
+});
+
+test('a past negative-price interval is not force-charged in a midday re-evaluation', () => {
+  const prices = createPrices(weekday);
+  prices[40].price = -0.01;
+  const plan = createPlan(createScriptContext(), prices, 100, weekday, true);
+
+  assert.equal(plan.intervals[40].workMode, 'Backup');
+});
+
+test('negative wholesale price with non-negative all-in price does not force charge', () => {
+  const context = createScriptContext();
+  const prices = createPrices(weekday);
+  prices[62].price = -0.10;
+  const allInPrices = context.applyFoxConsumerPrices(prices, {
+    getProperty: name => name === 'ENERGY_TAX_EUR_KWH' ? '0.13' :
+      name === 'VAT_PERCENTAGE' ? '21' : null
+  });
+  const plan = createPlan(context, allInPrices, 100, weekday, false);
+
+  assert.ok(allInPrices[62].price >= 0);
+  assert.notEqual(plan.intervals[62].workMode, 'ForceCharge');
+});
+
+test('negative discharge references have a minimum threshold of 0.045 EUR/kWh', () => {
+  const context = createScriptContext();
+
+  assertPrice(context.getFoxDischargeThreshold(-0.20, 1.20), 0.045);
 });
 
 test('below the SoC limit an unprofitable midday top-up keeps the stricter thresholds', () => {

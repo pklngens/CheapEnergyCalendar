@@ -49,10 +49,15 @@ The manager:
   to 15:00, and schedules it only when the average price from 17:00 to 22:00 is
   at least 1.20 times the candidate top-up window's average price;
 - sets **ForceCharge** for each scheduled charging window;
+- also sets **ForceCharge** for any remaining interval whose all-in consumer
+  price is below `FOX_NEGATIVE_PRICE_CHARGE_THRESHOLD_EUR` (default `0`
+  EUR/kWh). This charges automatically at negative all-in prices, including
+  outside the overnight and midday windows; the 10:15 re-evaluation does not
+  schedule past intervals;
 - uses all-in consumer prices, adding the optional supplier fee and VAT to the
   wholesale price and energy tax. The base discharge threshold is the higher
-  of the reference price multiplied by its multiplier and the reference price
-  plus 0.045 EUR/kWh;
+  of the non-negative reference price multiplied by its multiplier and that
+  reference price plus 0.045 EUR/kWh;
 - applies these thresholds to non-charging intervals:
 
   | Time | Condition | Threshold |
@@ -68,7 +73,8 @@ The manager:
   the mode is **Backup**. Scheduled charging intervals remain **ForceCharge**.
 - smooths isolated single-quarter mode changes: **SelfUse** between
   **Backup** intervals becomes **Backup**, and **Backup** between contiguous
-  **SelfUse** intervals becomes **SelfUse**, even if its price is negative;
+  **SelfUse** intervals becomes **SelfUse**. This smoothing does not change
+  **ForceCharge** intervals;
 - merges adjacent intervals with identical modes;
 - rejects the plan if the merged group count exceeds Fox ESS's reported
   `maxGroupCount`, and does not replace the existing schedule.
@@ -165,7 +171,8 @@ Calendar constants, event text, the 16:00 trigger hour, and the five-hour
 selection are at the top of `CheapEnergyCalendar.gs`.
 
 Battery constants, including the 23:00 trigger hour, 15-minute interval,
-90% charge efficiency, 85% SoC skip threshold, 1.20 discharge multiplier,
+`FOX_NEGATIVE_PRICE_CHARGE_THRESHOLD_EUR` (default `0` EUR/kWh), 90% charge
+efficiency, 85% SoC skip threshold, 1.20 discharge multiplier,
 1.28 weekend morning multiplier, 1.35 weekday morning multiplier when no
 midday top-up is scheduled, 17:00 weekday and 15:00 weekend evening starts,
 17:00 to 22:00 evening benchmark (`FOX_EVENING_BENCHMARK_START_HOUR` and

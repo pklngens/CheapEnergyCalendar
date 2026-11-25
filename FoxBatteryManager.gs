@@ -4,6 +4,7 @@ const FOX_BASE_URL = 'https://www.foxesscloud.com';
 const FOX_PRICE_API_URL = 'https://public.api.energyzero.nl/public/v1/prices';
 const FOX_PRICE_INTERVAL_MINUTES = 15;
 const FOX_RETRYABLE_HTTP_STATUSES = [408, 429, 500, 502, 503, 504];
+const FOX_NEGATIVE_PRICE_CHARGE_THRESHOLD_EUR = 0;
 const FOX_CHARGE_EFFICIENCY = 0.90;
 const FOX_DEFAULT_MIN_SOC_ON_GRID = 10;
 const FOX_SKIP_CHARGING_SOC = 85;
@@ -484,8 +485,9 @@ function getFoxAveragePriceInHours(prices, timeZone, startHour, endHour) {
 }
 
 function getFoxDischargeThreshold(referencePrice, multiplier) {
-  const threshold = referencePrice * multiplier;
-  const minimumThreshold = referencePrice + FOX_MIN_DISCHARGE_SPREAD_EUR;
+  const effectiveRef = Math.max(referencePrice, 0);
+  const threshold = effectiveRef * multiplier;
+  const minimumThreshold = effectiveRef + FOX_MIN_DISCHARGE_SPREAD_EUR;
   return Math.max(threshold, minimumThreshold);
 }
 
@@ -595,6 +597,9 @@ function createFoxBatteryPlan(prices, currentSoc, timeZone, targetDate, options)
     } else if (middayTopUpScheduled &&
         clockIndex >= middayWindow.clockIndex &&
         clockIndex < middayWindow.clockIndex + middayQuarterCount) {
+      workMode = 'ForceCharge';
+    } else if (interval.price < FOX_NEGATIVE_PRICE_CHARGE_THRESHOLD_EUR &&
+        (!planOptions.notBefore || interval.start >= planOptions.notBefore)) {
       workMode = 'ForceCharge';
     } else {
       const dischargeThreshold = hour >= eveningStartHour
