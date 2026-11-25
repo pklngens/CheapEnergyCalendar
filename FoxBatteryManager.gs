@@ -68,7 +68,8 @@ const FOX_MESSAGES = {
       '{delayMs} ms after {reason}.',
     scheduleUpdated:
       'Fox ESS scheduler updated for {date}: SoC {currentSoc}%, ' +
-      '{requiredQuarters} charging quarter(s), {groupCount} group(s), ' +
+      '{requiredQuarters} charging quarter(s), ' +
+      '{groupCount}/{maxGroupCount} group(s), ' +
       'morning discharge threshold {minDischargePrice} EUR/kWh, ' +
       'after-{eveningStartHour}:00 threshold {eveningDischargePrice} EUR/kWh; ' +
       'midday top-up {middayTopUp}.'
@@ -780,6 +781,7 @@ function updateFoxChargeScheduleLocked(middayOnly) {
     currentSoc: currentSoc,
     requiredQuarters: plan.requiredQuarters,
     groupCount: groups.length,
+    maxGroupCount: maxGroupCount,
     minDischargePrice: plan.minDischargePrice.toFixed(4),
     eveningStartHour: plan.eveningStartHour,
     eveningDischargePrice: plan.eveningDischargePrice.toFixed(4),

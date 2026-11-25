@@ -73,6 +73,13 @@ The manager:
 - rejects the plan if the merged group count exceeds Fox ESS's reported
   `maxGroupCount`, and does not replace the existing schedule.
 
+`maxGroupCount` is queried from the inverter on each update through
+`/op/v3/device/scheduler/get`. Newer Scheduler V3 devices such as the
+MQ2200-M-AC support up to 95 schedule groups, allowing quarter-hour granularity,
+while older Fox ESS inverters may be limited to 8 or 10 groups. Run
+`test-foxess-scheduler-get.ps1` to check the value reported by your specific
+inverter.
+
 The fixed six-quarter top-up in the 23:00 plan is evaluated independently of
 the 85% primary-charge skip. The 10:15 re-evaluation instead uses live SoC and
 may calculate zero required quarters. At or above 85%, it treats the battery as
@@ -165,7 +172,7 @@ data and do not contact Fox ESS.
 ## Fox ESS API tests
 
 Run `test-foxess-scheduler-get.ps1` for a read-only Scheduler V3 capability
-check.
+check, including the inverter-reported `maxGroupCount`.
 
 `test-foxess-scheduler-replace-restore.ps1` captures the current groups,
 replaces them with one temporary `ForceCharge(BAT)` group, and restores the

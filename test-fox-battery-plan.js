@@ -205,6 +205,7 @@ test('a skipped charge uses a capacity-scaled full-charge reference window', () 
 test('the schedule log still says no top-up is scheduled for a full battery', () => {
   const logs = [];
   const writes = [];
+  const reportedMaxGroupCount = 96;
   let lockReleased = false;
   const properties = {
     FOX_API_KEY: 'test-key',
@@ -236,7 +237,7 @@ test('the schedule log still says no top-up is scheduled for a full battery', ()
   context.foxApiPost = (endpoint, apiKey, payload) => {
     if (endpoint === '/op/v3/device/scheduler/get') {
       return {
-        maxGroupCount: 96,
+        maxGroupCount: reportedMaxGroupCount,
         properties: { workmode: { enumList: ['SelfUse', 'Backup', 'ForceCharge'] } }
       };
     }
@@ -251,6 +252,7 @@ test('the schedule log still says no top-up is scheduled for a full battery', ()
   assert.equal(writes.length, 1);
   assert.ok(writes[0].groups.every(group => group.workMode !== 'ForceCharge'));
   assert.equal(logs.length, 1);
+  assert.ok(logs[0].includes(`/${reportedMaxGroupCount} group(s)`));
   assert.match(logs[0], /morning discharge threshold 0\.3000 EUR\/kWh/);
   assert.match(logs[0], /after-17:00 threshold 0\.1700 EUR\/kWh/);
   assert.match(logs[0], /midday top-up not scheduled\.$/);
