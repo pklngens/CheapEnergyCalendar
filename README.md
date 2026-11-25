@@ -129,6 +129,14 @@ manager does not communicate with the P1 meter.
    access, external API access, Script Property access, and (if `ALERT_EMAIL` is
    configured) permission to send failure notification email.
 
+`ALERT_EMAIL` can be any recipient address; messages are sent from your Google
+account. To authorize the **Send email as you** permission and verify alert
+delivery without changing the Fox ESS schedule, run `authorizeAndTestAlert`
+manually in the Apps Script editor. If `ALERT_EMAIL` is unset, the helper logs
+that authorization is complete and skips sending. Re-running
+`installFoxBatteryTrigger` may also prompt for the new permission, but it does
+not send a test email.
+
 ## Install and run
 
 Run the installer functions once per schedule:

@@ -62,10 +62,17 @@ const FOX_MESSAGES = {
     schedulerValueOutOfRange:
       'Fox scheduler value {fieldName}={value} is outside the device range {minimum}-{maximum}.'
   },
+  ALERT_EMAIL: {
+    testSubject: 'Fox ESS alert test',
+    testBody: 'This is a test alert email from your Fox ESS battery schedule script.'
+  },
   LOG_messages: {
     triggerSet: 'Fox ESS battery trigger set for approximately {hour}:00 ({timeZone}).',
     middayTriggerSet:
       'Fox ESS midday battery trigger set for approximately {time} ({timeZone}).',
+    alertTestEmailSent: 'Sent test alert email to {email}.',
+    alertTestEmailSkipped:
+      'Script authorization is complete. No test email was sent because ALERT_EMAIL is unset.',
     scheduleUpdateLocked:
       'Warning: Fox ESS schedule update skipped because another update holds the script lock.',
     requestRetry:
@@ -120,6 +127,28 @@ function installFoxBatteryTrigger() {
   Logger.log(formatFoxMessage(FOX_MESSAGES.LOG_messages.middayTriggerSet, {
     time: `${FOX_MIDDAY_TRIGGER_HOUR}:15`,
     timeZone: timeZone
+  }));
+}
+
+/**
+ * Sends a test alert email to authorize MailApp and verify ALERT_EMAIL delivery.
+ * This helper does not read or modify the Fox ESS schedule.
+ */
+function authorizeAndTestAlert() {
+  const alertEmail = PropertiesService.getScriptProperties().getProperty('ALERT_EMAIL');
+  if (typeof alertEmail !== 'string' || alertEmail.trim() === '') {
+    Logger.log(FOX_MESSAGES.LOG_messages.alertTestEmailSkipped);
+    return;
+  }
+
+  const recipient = alertEmail.trim();
+  MailApp.sendEmail(
+    recipient,
+    FOX_MESSAGES.ALERT_EMAIL.testSubject,
+    FOX_MESSAGES.ALERT_EMAIL.testBody
+  );
+  Logger.log(formatFoxMessage(FOX_MESSAGES.LOG_messages.alertTestEmailSent, {
+    email: recipient
   }));
 }
 

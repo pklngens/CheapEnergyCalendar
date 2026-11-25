@@ -398,6 +398,50 @@ test('schedule failures send optional email without masking the original error',
   });
 });
 
+test('authorizeAndTestAlert sends a test email to the configured recipient', () => {
+  const emails = [];
+  const logs = [];
+  const context = createScriptContext({
+    PropertiesService: {
+      getScriptProperties: () => ({ getProperty: name => {
+        assert.equal(name, 'ALERT_EMAIL');
+        return ' alerts@example.test ';
+      } })
+    },
+    MailApp: {
+      sendEmail: (...args) => emails.push(args)
+    },
+    Logger: { log: message => logs.push(message) }
+  });
+
+  context.authorizeAndTestAlert();
+
+  assert.deepEqual(emails, [[
+    'alerts@example.test',
+    'Fox ESS alert test',
+    'This is a test alert email from your Fox ESS battery schedule script.'
+  ]]);
+  assert.match(logs[0], /Sent test alert email to alerts@example\.test/);
+});
+
+test('authorizeAndTestAlert logs when ALERT_EMAIL is unset without sending', () => {
+  const logs = [];
+  const context = createScriptContext({
+    PropertiesService: {
+      getScriptProperties: () => ({ getProperty: () => '  ' })
+    },
+    MailApp: {
+      sendEmail: () => assert.fail('No test email should be sent')
+    },
+    Logger: { log: message => logs.push(message) }
+  });
+
+  context.authorizeAndTestAlert();
+
+  assert.match(logs[0], /Script authorization is complete/);
+  assert.match(logs[0], /No test email was sent because ALERT_EMAIL is unset/);
+});
+
 test('a locked schedule update logs a warning and returns without processing', () => {
   const logs = [];
   let processingStarted = false;
