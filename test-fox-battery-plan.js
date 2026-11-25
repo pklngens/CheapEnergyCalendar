@@ -186,6 +186,25 @@ test('required charge quarters scale with battery capacity and force power', () 
   });
 });
 
+test('raising the grid SoC reserve reduces the full-charge swing', () => {
+  const context = createScriptContext();
+  const prices = createPrices(weekday);
+  const battery = { batteryCapacityWh: 2110, forcePowerWatts: 1200 };
+  const defaultReservePlan = createPlan(context, prices, 10, weekday, false, battery);
+  const raisedReservePlan = createPlan(context, prices, 20, weekday, false, {
+    ...battery,
+    minSocOnGrid: 20
+  });
+  const maximumReservePlan = createPlan(context, prices, 20, weekday, false, {
+    ...battery,
+    minSocOnGrid: 100
+  });
+
+  assert.equal(defaultReservePlan.requiredQuarters, 8);
+  assert.equal(raisedReservePlan.requiredQuarters, 7);
+  assert.equal(maximumReservePlan.requiredQuarters, 7);
+});
+
 test('a skipped charge uses a capacity-scaled full-charge reference window', () => {
   const prices = createPrices(weekday).map(interval => ({
     ...interval,
@@ -253,9 +272,43 @@ test('the schedule log still says no top-up is scheduled for a full battery', ()
   assert.ok(writes[0].groups.every(group => group.workMode !== 'ForceCharge'));
   assert.equal(logs.length, 1);
   assert.ok(logs[0].includes(`/${reportedMaxGroupCount} group(s)`));
+  assert.equal(writes[0].groups[0].extraParam.minSocOnGrid, 10);
   assert.match(logs[0], /morning discharge threshold 0\.3000 EUR\/kWh/);
   assert.match(logs[0], /after-17:00 threshold 0\.1700 EUR\/kWh/);
   assert.match(logs[0], /midday top-up not scheduled\.$/);
+
+  properties.FOX_MIN_SOC_ON_GRID = '20';
+  context.updateFoxChargeSchedule(true);
+  assert.equal(writes[1].groups[0].extraParam.minSocOnGrid, 20);
+});
+
+test('an invalid configured grid SoC reserve rejects the schedule update', () => {
+  for (const minSocOnGrid of ['', '9', '100.1', '101', 'Infinity', 'NaN']) {
+    const properties = {
+      FOX_API_KEY: 'test-key',
+      FOX_DEVICE_SN: 'test-device',
+      FOX_FD_POWER_W: '1200',
+      FOX_BATTERY_CAPACITY_WH: '2400',
+      FOX_MIN_SOC_ON_GRID: minSocOnGrid
+    };
+    const context = createScriptContext({
+      LockService: {
+        getScriptLock: () => ({
+          tryLock: () => true,
+          releaseLock: () => {}
+        })
+      },
+      PropertiesService: {
+        getScriptProperties: () => ({ getProperty: name => properties[name] ?? null })
+      }
+    });
+    context.getFoxBatteryTimeZone = () => 'UTC';
+
+    assert.throws(
+      () => context.updateFoxChargeSchedule(false),
+      /FOX_MIN_SOC_ON_GRID must be an integer from 10 to 100/
+    );
+  }
 });
 
 test('a missing or invalid battery capacity rejects the schedule update', () => {
@@ -284,6 +337,65 @@ test('a missing or invalid battery capacity rejects the schedule update', () => 
       /FOX_BATTERY_CAPACITY_WH must be set .* positive finite number/
     );
   }
+});
+
+test('schedule failures send optional email without masking the original error', () => {
+  const cases = [
+    { middayOnly: true, mode: 'midday', date: '2026-11-25', mailFails: false },
+    { middayOnly: false, mode: 'tomorrow', date: '2026-11-26', mailFails: true }
+  ];
+
+  cases.forEach(testCase => {
+    const emails = [];
+    const logs = [];
+    const properties = {
+      FOX_API_KEY: 'test-key',
+      FOX_DEVICE_SN: 'test-device',
+      FOX_FD_POWER_W: '1200',
+      FOX_BATTERY_CAPACITY_WH: 'invalid',
+      ALERT_EMAIL: ' alerts@example.test '
+    };
+    const context = createScriptContext({
+      LockService: {
+        getScriptLock: () => ({
+          tryLock: () => true,
+          releaseLock: () => {}
+        })
+      },
+      PropertiesService: {
+        getScriptProperties: () => ({ getProperty: name => properties[name] ?? null })
+      },
+      MailApp: {
+        sendEmail: (recipient, subject, body) => {
+          emails.push({ recipient, subject, body });
+          if (testCase.mailFails) {
+            throw new Error('mail unavailable');
+          }
+        }
+      },
+      Logger: { log: message => logs.push(message) }
+    });
+    context.getFoxBatteryTimeZone = () => 'UTC';
+    context.getFoxTodayBounds = () => ({ date: '2026-11-25' });
+    context.getFoxTomorrowBounds = () => ({ date: '2026-11-26' });
+
+    assert.throws(
+      () => context.updateFoxChargeSchedule(testCase.middayOnly),
+      /FOX_BATTERY_CAPACITY_WH must be set .* positive finite number/
+    );
+    assert.equal(emails.length, 1);
+    assert.equal(emails[0].recipient, 'alerts@example.test');
+    assert.match(emails[0].subject, new RegExp(testCase.mode));
+    assert.match(emails[0].body, new RegExp(`Run mode: ${testCase.mode}`));
+    assert.match(emails[0].body, new RegExp(`Target date: ${testCase.date}`));
+    assert.match(
+      emails[0].body,
+      /Error: FOX_BATTERY_CAPACITY_WH must be set .* positive finite number/
+    );
+    if (testCase.mailFails) {
+      assert.match(logs[0], /Could not send the Fox ESS failure notification email/);
+    }
+  });
 });
 
 test('a locked schedule update logs a warning and returns without processing', () => {
@@ -321,7 +433,11 @@ test('the script lock is released when schedule processing throws', () => {
           lockReleased = true;
         }
       })
-    }
+    },
+    PropertiesService: {
+      getScriptProperties: () => ({ getProperty: () => null })
+    },
+    Logger: { log: () => {} }
   });
   context.getFoxBatteryTimeZone = () => {
     throw new Error('test failure');

@@ -109,6 +109,8 @@ manager does not communicate with the P1 meter.
    | `FOX_DEVICE_SN` | Battery manager | Fox ESS inverter serial number. |
    | `FOX_BATTERY_CAPACITY_WH` | Battery manager | Connected battery's rated capacity in watt-hours; use `2110` for the 2.11 kWh battery in this setup. |
    | `FOX_FD_POWER_W` | Battery manager | Supported schedule power in watts, for example `1200` for the MQ2200-M-AC setup. |
+   | `FOX_MIN_SOC_ON_GRID` | Battery manager (optional) | Minimum grid SoC reserve, integer from `10` to `100`; defaults to `10` and affects the charge-duration calculation. |
+   | `ALERT_EMAIL` | Battery manager (optional) | Email address for schedule-update failure notifications. |
    | `ENERGY_TAX_EUR_KWH` | Battery manager (optional) | Energy tax including VAT in EUR/kWh, default `0`. |
    | `SUPPLIER_FEE_EUR_KWH` | Battery manager (optional) | Supplier purchase fee excluding VAT in EUR/kWh, default `0`. |
    | `VAT_PERCENTAGE` | Battery manager (optional) | VAT percentage, for example `21`; default `0`. |
@@ -116,11 +118,16 @@ manager does not communicate with the P1 meter.
    `FOX_BATTERY_CAPACITY_WH` is the connected battery's capacity, not the
    inverter's power rating; `FOX_FD_POWER_W` is the charging power. Configure
    both for the actual battery and supported charge power.
+   `FOX_MIN_SOC_ON_GRID` also affects the planner's charge-duration calculation.
+   When `ALERT_EMAIL` is non-empty, a failed schedule update sends an email with
+   its run mode, target date, and error; a mail-sending failure does not replace
+   the original error.
 
 4. Set `CALENDAR_NAME` in Script Properties to the exact calendar name. There
    must be exactly one calendar with that name.
 5. Save the project and authorize it. The scripts require Google Calendar
-   access, external API access, and Script Property access as applicable.
+   access, external API access, Script Property access, and (if `ALERT_EMAIL` is
+   configured) permission to send failure notification email.
 
 ## Install and run
 
