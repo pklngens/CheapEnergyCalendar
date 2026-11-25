@@ -52,8 +52,9 @@ The manager:
 - also sets **ForceCharge** for any remaining interval whose all-in consumer
   price is below `FOX_NEGATIVE_PRICE_CHARGE_THRESHOLD_EUR` (default `0`
   EUR/kWh). This charges automatically at negative all-in prices, including
-  outside the overnight and midday windows; the 10:15 re-evaluation does not
-  schedule past intervals;
+  outside the overnight and midday windows, but only when SoC is below 85%
+  (`FOX_SKIP_CHARGING_SOC`); the 10:15 re-evaluation does not schedule past
+  intervals;
 - uses all-in consumer prices, adding the optional supplier fee and VAT to the
   wholesale price and energy tax. The base discharge threshold is the higher
   of the non-negative reference price multiplied by its multiplier and that

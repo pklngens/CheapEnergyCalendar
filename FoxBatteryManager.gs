@@ -4,6 +4,7 @@ const FOX_BASE_URL = 'https://www.foxesscloud.com';
 const FOX_PRICE_API_URL = 'https://public.api.energyzero.nl/public/v1/prices';
 const FOX_PRICE_INTERVAL_MINUTES = 15;
 const FOX_RETRYABLE_HTTP_STATUSES = [408, 429, 500, 502, 503, 504];
+// Compared against all-in consumer prices, including fees, taxes, and VAT.
 const FOX_NEGATIVE_PRICE_CHARGE_THRESHOLD_EUR = 0;
 const FOX_CHARGE_EFFICIENCY = 0.90;
 const FOX_DEFAULT_MIN_SOC_ON_GRID = 10;
@@ -596,7 +597,8 @@ function createFoxBatteryPlan(prices, currentSoc, timeZone, targetDate, options)
         clockIndex >= middayWindow.clockIndex &&
         clockIndex < middayWindow.clockIndex + middayQuarterCount) {
       workMode = 'ForceCharge';
-    } else if (interval.price < FOX_NEGATIVE_PRICE_CHARGE_THRESHOLD_EUR &&
+    } else if (currentSoc < FOX_SKIP_CHARGING_SOC &&
+        interval.price < FOX_NEGATIVE_PRICE_CHARGE_THRESHOLD_EUR &&
         (!planOptions.notBefore || interval.start >= planOptions.notBefore)) {
       workMode = 'ForceCharge';
     } else {

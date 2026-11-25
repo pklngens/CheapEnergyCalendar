@@ -100,8 +100,8 @@ test('a full battery uses a zero evening floor when the evening average is negat
   const plan = createPlan(createScriptContext(), prices, 85);
 
   assertPrice(plan.eveningDischargePrice, 0);
-  assert.equal(plan.intervals[19 * 4].workMode, 'ForceCharge');
-  assert.equal(plan.intervals[19 * 4 + 1].workMode, 'ForceCharge');
+  assert.equal(plan.intervals[19 * 4].workMode, 'Backup');
+  assert.equal(plan.intervals[19 * 4 + 1].workMode, 'Backup');
 });
 
 test('anti-chatter still smooths an isolated positive-price quarter', () => {
@@ -127,6 +127,17 @@ test('negative all-in prices charge outside scheduled windows without a top-up',
   assert.equal(plan.intervals[61].workMode, 'Backup');
   assert.equal(plan.intervals[62].workMode, 'ForceCharge');
   assert.equal(plan.intervals[63].workMode, 'Backup');
+});
+
+test('negative all-in prices do not charge at or above the SoC skip threshold', () => {
+  const context = createScriptContext();
+  const prices = createPrices(weekday, { evening: 0.05 });
+  prices[62].price = -0.01;
+
+  for (const soc of [85, 100]) {
+    const plan = createPlan(context, prices, soc, weekday, false);
+    assert.notEqual(plan.intervals[62].workMode, 'ForceCharge');
+  }
 });
 
 test('a past negative-price interval is not force-charged in a midday re-evaluation', () => {
