@@ -225,6 +225,15 @@ test('required charge quarters scale with battery capacity and force power', () 
   });
 });
 
+test('required charge quarters use remaining energy without double rounding', () => {
+  const plan = createPlan(createScriptContext(), createPrices(weekday), 40, weekday, false, {
+    batteryCapacityWh: 2110,
+    forcePowerWatts: 1200
+  });
+
+  assert.equal(plan.requiredQuarters, 5);
+});
+
 test('raising the grid SoC reserve reduces the full-charge swing', () => {
   const context = createScriptContext();
   const prices = createPrices(weekday);

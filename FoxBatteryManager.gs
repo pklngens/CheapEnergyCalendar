@@ -514,12 +514,10 @@ function createFoxBatteryPlan(prices, currentSoc, timeZone, targetDate, options)
   );
   const requiredQuarters = currentSoc >= FOX_SKIP_CHARGING_SOC
     ? 0
-    : chargeSocSwing === 0
-      ? Math.ceil(
-        (batteryCapacityWh * ((100 - currentSoc) / 100)) /
-        (forcePowerWatts * chargeEfficiency * (FOX_PRICE_INTERVAL_MINUTES / 60))
-      )
-      : Math.ceil(((100 - currentSoc) / chargeSocSwing) * fullChargeQuarters);
+    : Math.ceil(
+      (batteryCapacityWh * ((100 - currentSoc) / 100)) /
+      (forcePowerWatts * chargeEfficiency * (FOX_PRICE_INTERVAL_MINUTES / 60))
+    );
   // When charging is skipped, use a hypothetical overnight window as a reference.
   const referenceQuarters = requiredQuarters || Math.max(fullChargeQuarters, 1);
   const overnightWindow = findCheapestPriceWindow(
