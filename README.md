@@ -36,12 +36,15 @@ SoC from the Fox ESS API.
 
 The manager:
 
-- calculates required charging time from SoC, using eight quarter-hours as the
-  10%-to-100% baseline at 1200 W;
+- calculates required charging quarters from the configured battery capacity
+  and force-charge power, using 90% charging efficiency and 15-minute intervals.
+  For this setup, 2110 Wh at 1200 W rounds up to eight quarters for a
+  10%-to-100% charge;
 - schedules the primary charge in the cheapest contiguous window from 00:00 to
   07:00;
-- uses a hypothetical cheapest eight-quarter overnight window as the discharge
-  reference when SoC is at least 85%, even though it skips the primary charge;
+- uses a hypothetical cheapest full-charge-length overnight window as the
+  discharge reference when SoC is at least 85%, even though it skips the
+  primary charge;
 - looks for a six-quarter (90-minute) top-up in the cheapest window from 10:00
   to 15:00, and schedules it only when the average price from 16:00 to 21:00 is
   at least 1.20 times the candidate top-up window's average price;
@@ -97,10 +100,15 @@ manager does not communicate with the P1 meter.
    | `CALENDAR_NAME` | Calendar script | Exact calendar name, for example `Huis`. |
    | `FOX_API_KEY` | Battery manager | Fox ESS API key. |
    | `FOX_DEVICE_SN` | Battery manager | Fox ESS inverter serial number. |
+   | `FOX_BATTERY_CAPACITY_WH` | Battery manager | Connected battery's rated capacity in watt-hours; use `2110` for the 2.11 kWh battery in this setup. |
    | `FOX_FD_POWER_W` | Battery manager | Supported schedule power in watts, for example `1200` for the MQ2200-M-AC setup. |
    | `ENERGY_TAX_EUR_KWH` | Battery manager (optional) | Energy tax including VAT in EUR/kWh, default `0`. |
    | `SUPPLIER_FEE_EUR_KWH` | Battery manager (optional) | Supplier purchase fee excluding VAT in EUR/kWh, default `0`. |
    | `VAT_PERCENTAGE` | Battery manager (optional) | VAT percentage, for example `21`; default `0`. |
+
+   `FOX_BATTERY_CAPACITY_WH` is the connected battery's capacity, not the
+   inverter's power rating; `FOX_FD_POWER_W` is the charging power. Configure
+   both for the actual battery and supported charge power.
 
 4. Set `CALENDAR_NAME` in Script Properties to the exact calendar name. There
    must be exactly one calendar with that name.
@@ -135,7 +143,7 @@ Calendar constants, event text, the 16:00 trigger hour, and the five-hour
 selection are at the top of `CheapEnergyCalendar.gs`.
 
 Battery constants, including the 23:00 trigger hour, 15-minute interval,
-eight-quarter baseline, 85% SoC skip threshold, 1.20 discharge multiplier,
+90% charge efficiency, 85% SoC skip threshold, 1.20 discharge multiplier,
 1.28 weekend morning multiplier, 1.35 weekday morning multiplier when no
 midday top-up is scheduled, 17:00 weekday and 15:00 weekend evening starts,
 six-quarter midday top-up duration, and 1.20 midday spread multiplier, are at

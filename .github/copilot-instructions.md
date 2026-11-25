@@ -45,10 +45,15 @@ when setting up or reinstalling its respective trigger.
   Do not convert it from EUR/MWh.
 - The battery manager reads SoC via `/op/v0/device/real/query` with
   `{sn: deviceSN, variables: ['SoC']}` and validates the returned percentage.
-  It uses a cheapest contiguous sliding window, an eight-quarter 10%-to-100%
-  baseline at 1200 W, and a 1.20 discharge multiplier. At 85% SoC or above,
-  skip charging but use a hypothetical cheapest eight-quarter window for the
-  profitability reference.
+  It calculates the full-charge quarter count from the required
+  `FOX_BATTERY_CAPACITY_WH`, configured `FOX_FD_POWER_W`, 90% charge efficiency,
+  and 15-minute interval duration. Scale required quarters by the remaining
+  SoC below 85%; at or above 85%, skip charging but use a hypothetical cheapest
+  full-charge-length window for the profitability reference. Preserve sensible
+  defaults in `createFoxBatteryPlan` for tests that omit the new options.
+  Treat capacity as the connected battery's rated watt-hours (2110 Wh for the
+  documented setup), separate from the inverter charge power, and validate it
+  as a positive finite number before planning.
 - Merge adjacent 15-minute battery intervals with identical modes. Compare the
   final group count against the device-reported `maxGroupCount` and do not write
   if it exceeds the limit.

@@ -56,12 +56,13 @@ function createPrices(date, { overnight = 0.25, midday = 0.10, evening = 0.20 } 
   });
 }
 
-function createPlan(context, prices, soc, date = weekday, middayOnly = true) {
+function createPlan(context, prices, soc, date = weekday, middayOnly = true, options = {}) {
   return context.createFoxBatteryPlan(prices, soc, 'UTC', date, {
     middayOnly,
     notBefore: middayOnly
       ? new Date(date.getTime() + (10 * 60 + 15) * 60 * 1000)
-      : undefined
+      : undefined,
+    ...options
   });
 }
 
@@ -170,6 +171,37 @@ test('a full midday battery preserves the weekend morning rule', () => {
   assert.equal(plan.eveningStartHour, 15);
 });
 
+test('required charge quarters scale with battery capacity and force power', () => {
+  const context = createScriptContext();
+  const prices = createPrices(weekday);
+  const configurations = [
+    { batteryCapacityWh: 2400, forcePowerWatts: 1200, expectedQuarters: 8 },
+    { batteryCapacityWh: 5120, forcePowerWatts: 2000, expectedQuarters: 11 }
+  ];
+
+  configurations.forEach(configuration => {
+    const { expectedQuarters, ...options } = configuration;
+    const plan = createPlan(context, prices, 10, weekday, false, options);
+    assert.equal(plan.requiredQuarters, expectedQuarters);
+  });
+});
+
+test('a skipped charge uses a capacity-scaled full-charge reference window', () => {
+  const prices = createPrices(weekday).map(interval => ({
+    ...interval,
+    price: interval.clockIndex < 28
+      ? (interval.clockIndex + 1) / 100
+      : interval.price
+  }));
+  const plan = createPlan(createScriptContext(), prices, 85, weekday, false, {
+    batteryCapacityWh: 5120,
+    forcePowerWatts: 2000
+  });
+
+  assert.equal(plan.requiredQuarters, 0);
+  assertPrice(plan.averageChargePrice, 0.06);
+});
+
 test('the schedule log still says no top-up is scheduled for a full battery', () => {
   const logs = [];
   const writes = [];
@@ -177,7 +209,8 @@ test('the schedule log still says no top-up is scheduled for a full battery', ()
   const properties = {
     FOX_API_KEY: 'test-key',
     FOX_DEVICE_SN: 'test-device',
-    FOX_FD_POWER_W: '1200'
+    FOX_FD_POWER_W: '1200',
+    FOX_BATTERY_CAPACITY_WH: '2400'
   };
   const context = createScriptContext({
     LockService: {
@@ -221,6 +254,34 @@ test('the schedule log still says no top-up is scheduled for a full battery', ()
   assert.match(logs[0], /morning discharge threshold 0\.3000 EUR\/kWh/);
   assert.match(logs[0], /after-17:00 threshold 0\.1700 EUR\/kWh/);
   assert.match(logs[0], /midday top-up not scheduled\.$/);
+});
+
+test('a missing or invalid battery capacity rejects the schedule update', () => {
+  for (const batteryCapacity of [null, '', '0', '-2400', 'Infinity', 'NaN']) {
+    const properties = {
+      FOX_API_KEY: 'test-key',
+      FOX_DEVICE_SN: 'test-device',
+      FOX_FD_POWER_W: '1200',
+      FOX_BATTERY_CAPACITY_WH: batteryCapacity
+    };
+    const context = createScriptContext({
+      LockService: {
+        getScriptLock: () => ({
+          tryLock: () => true,
+          releaseLock: () => {}
+        })
+      },
+      PropertiesService: {
+        getScriptProperties: () => ({ getProperty: name => properties[name] ?? null })
+      }
+    });
+    context.getFoxBatteryTimeZone = () => 'UTC';
+
+    assert.throws(
+      () => context.updateFoxChargeSchedule(false),
+      /FOX_BATTERY_CAPACITY_WH must be set .* positive finite number/
+    );
+  }
 });
 
 test('a locked schedule update logs a warning and returns without processing', () => {

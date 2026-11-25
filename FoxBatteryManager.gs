@@ -4,8 +4,7 @@ const FOX_BASE_URL = 'https://www.foxesscloud.com';
 const FOX_PRICE_API_URL = 'https://public.api.energyzero.nl/public/v1/prices';
 const FOX_PRICE_INTERVAL_MINUTES = 15;
 const FOX_RETRYABLE_HTTP_STATUSES = [408, 429, 500, 502, 503, 504];
-// Eight quarter-hours represent charging from 10% to 100% at 1200 W.
-const FOX_FULL_CHARGE_QUARTERS = 8;
+const FOX_CHARGE_EFFICIENCY = 0.90;
 const FOX_SKIP_CHARGING_SOC = 85;
 const FOX_DISCHARGE_PRICE_MULTIPLIER = 1.20;
 const FOX_MIN_DISCHARGE_SPREAD_EUR = 0.045;
@@ -39,6 +38,8 @@ const FOX_MESSAGES = {
     missingFoxCredentials: 'FOX_API_KEY or FOX_DEVICE_SN is missing in Script Properties.',
     invalidForcePower:
       'FOX_FD_POWER_W must be set in Script Properties to a positive integer number of watts.',
+    invalidBatteryCapacity:
+      'FOX_BATTERY_CAPACITY_WH must be set in Script Properties to a positive finite number of watt-hours.',
     invalidSchedulerConfiguration:
       'Fox ESS did not return a valid Scheduler V3 configuration.',
     missingSchedulerModes: 'The Fox ESS response did not include the supported scheduler modes.',
@@ -455,12 +456,24 @@ function createFoxBatteryPlan(prices, currentSoc, timeZone, targetDate, options)
   const planOptions = options || {};
   const middayOnly = planOptions.middayOnly === true;
   const isBatteryAlreadyFull = middayOnly && currentSoc >= FOX_SKIP_CHARGING_SOC;
-  // Scale the eight-quarter 10%-to-100% baseline to the current SoC below 85%.
+  const batteryCapacityWh = planOptions.batteryCapacityWh === undefined
+    ? 2400
+    : planOptions.batteryCapacityWh;
+  const forcePowerWatts = planOptions.forcePowerWatts === undefined
+    ? 1200
+    : planOptions.forcePowerWatts;
+  const chargeEfficiency = planOptions.chargeEfficiency === undefined
+    ? FOX_CHARGE_EFFICIENCY
+    : planOptions.chargeEfficiency;
+  const fullChargeQuarters = Math.ceil(
+    (batteryCapacityWh * 0.90) /
+    (forcePowerWatts * chargeEfficiency * (FOX_PRICE_INTERVAL_MINUTES / 60))
+  );
   const requiredQuarters = currentSoc >= FOX_SKIP_CHARGING_SOC
     ? 0
-    : Math.ceil(((100 - currentSoc) / 90) * FOX_FULL_CHARGE_QUARTERS);
+    : Math.ceil(((100 - currentSoc) / 90) * fullChargeQuarters);
   // When charging is skipped, use a hypothetical overnight window as a reference.
-  const referenceQuarters = requiredQuarters || FOX_FULL_CHARGE_QUARTERS;
+  const referenceQuarters = requiredQuarters || fullChargeQuarters;
   const overnightWindow = findCheapestPriceWindow(
     prices,
     referenceQuarters,
@@ -673,12 +686,16 @@ function updateFoxChargeScheduleLocked(middayOnly) {
   const apiKey = scriptProperties.getProperty('FOX_API_KEY');
   const deviceSN = scriptProperties.getProperty('FOX_DEVICE_SN');
   const forcePowerWatts = Number(scriptProperties.getProperty('FOX_FD_POWER_W'));
+  const batteryCapacityWh = Number(scriptProperties.getProperty('FOX_BATTERY_CAPACITY_WH'));
 
   if (!apiKey || !deviceSN) {
     throw new Error(FOX_MESSAGES.ERROR_MESSAGES.missingFoxCredentials);
   }
   if (!Number.isInteger(forcePowerWatts) || forcePowerWatts <= 0) {
     throw new Error(FOX_MESSAGES.ERROR_MESSAGES.invalidForcePower);
+  }
+  if (!Number.isFinite(batteryCapacityWh) || batteryCapacityWh <= 0) {
+    throw new Error(FOX_MESSAGES.ERROR_MESSAGES.invalidBatteryCapacity);
   }
 
   const scheduleValues = {
@@ -702,7 +719,10 @@ function updateFoxChargeScheduleLocked(middayOnly) {
     targetDay.start,
     {
       middayOnly: middayOnly,
-      notBefore: middayOnly ? new Date() : undefined
+      notBefore: middayOnly ? new Date() : undefined,
+      batteryCapacityWh: batteryCapacityWh,
+      forcePowerWatts: forcePowerWatts,
+      chargeEfficiency: FOX_CHARGE_EFFICIENCY
     }
   );
   const groups = mergeFoxScheduleGroups(plan.intervals, scheduleValues, timeZone);
