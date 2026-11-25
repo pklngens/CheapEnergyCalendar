@@ -45,6 +45,9 @@ when setting up or reinstalling its respective trigger.
   Do not convert it from EUR/MWh.
 - The battery manager reads SoC via `/op/v0/device/real/query` with
   `{sn: deviceSN, variables: ['SoC']}` and validates the returned percentage.
+  Use the configurable 17:00–22:00 evening benchmark defined by
+  `FOX_EVENING_BENCHMARK_START_HOUR` and `FOX_EVENING_BENCHMARK_END_HOUR` for
+  midday top-up eligibility and discharge threshold floors.
   It calculates the full-charge quarter count from the required
   `FOX_BATTERY_CAPACITY_WH`, configured `FOX_FD_POWER_W`, 90% charge efficiency,
   and 15-minute interval duration. Scale required quarters by the remaining

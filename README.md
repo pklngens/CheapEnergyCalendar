@@ -46,7 +46,7 @@ The manager:
   discharge reference when SoC is at least 85%, even though it skips the
   primary charge;
 - looks for a six-quarter (90-minute) top-up in the cheapest window from 10:00
-  to 15:00, and schedules it only when the average price from 16:00 to 21:00 is
+  to 15:00, and schedules it only when the average price from 17:00 to 22:00 is
   at least 1.20 times the candidate top-up window's average price;
 - sets **ForceCharge** for each scheduled charging window;
 - uses all-in consumer prices, adding the optional supplier fee and VAT to the
@@ -58,11 +58,11 @@ The manager:
   | Time | Condition | Threshold |
   | --- | --- | --- |
   | Before 17:00 on weekdays | Midday top-up scheduled, or SoC at least 85% during the 10:15 re-evaluation | Base threshold using the overnight reference and 1.20 multiplier |
-  | Before 17:00 on weekdays | No midday top-up scheduled, except when SoC is at least 85% during the 10:15 re-evaluation | Higher of the base threshold using the overnight reference and 1.35 multiplier, or 80% of the 16:00 to 21:00 average price |
+  | Before 17:00 on weekdays | No midday top-up scheduled, except when SoC is at least 85% during the 10:15 re-evaluation | Higher of the base threshold using the overnight reference and 1.35 multiplier, or 80% of the 17:00 to 22:00 average price |
   | Before 15:00 on weekends | Weekend | Base threshold using the overnight reference and 1.28 multiplier |
-  | From the evening start (17:00 weekdays, 15:00 weekends) | Midday top-up scheduled | Higher of the base threshold using the top-up reference and 1.20 multiplier, or 85% of the 16:00 to 21:00 average price |
-  | From the evening start (17:00 weekdays, 15:00 weekends) | SoC at least 85% during the 10:15 re-evaluation | Higher of 0 EUR/kWh or 85% of the 16:00 to 21:00 average price |
-  | From the evening start (17:00 weekdays, 15:00 weekends) | No midday top-up scheduled, except when SoC is at least 85% during the 10:15 re-evaluation | Higher of the base threshold using the overnight reference and 1.20 multiplier, or 85% of the 16:00 to 21:00 average price |
+  | From the evening start (17:00 weekdays, 15:00 weekends) | Midday top-up scheduled | Higher of the base threshold using the top-up reference and 1.20 multiplier, or 85% of the 17:00 to 22:00 average price |
+  | From the evening start (17:00 weekdays, 15:00 weekends) | SoC at least 85% during the 10:15 re-evaluation | Higher of 0 EUR/kWh or 85% of the 17:00 to 22:00 average price |
+  | From the evening start (17:00 weekdays, 15:00 weekends) | No midday top-up scheduled, except when SoC is at least 85% during the 10:15 re-evaluation | Higher of the base threshold using the overnight reference and 1.20 multiplier, or 85% of the 17:00 to 22:00 average price |
 
   At or above the applicable threshold, the mode is **SelfUse**; below it,
   the mode is **Backup**. Scheduled charging intervals remain **ForceCharge**.
@@ -153,8 +153,9 @@ Battery constants, including the 23:00 trigger hour, 15-minute interval,
 90% charge efficiency, 85% SoC skip threshold, 1.20 discharge multiplier,
 1.28 weekend morning multiplier, 1.35 weekday morning multiplier when no
 midday top-up is scheduled, 17:00 weekday and 15:00 weekend evening starts,
-six-quarter midday top-up duration, and 1.20 midday spread multiplier, are at
-the top of `FoxBatteryManager.gs`. Put
+17:00 to 22:00 evening benchmark (`FOX_EVENING_BENCHMARK_START_HOUR` and
+`FOX_EVENING_BENCHMARK_END_HOUR`), six-quarter midday top-up duration, and
+1.20 midday spread multiplier, are at the top of `FoxBatteryManager.gs`. Put
 supplier-specific taxes, fees, and VAT in the optional Script Properties rather
 than source control.
 

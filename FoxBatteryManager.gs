@@ -12,6 +12,8 @@ const FOX_WEEKEND_MORNING_MULTIPLIER = 1.28;
 const FOX_WEEKDAY_NO_MIDDAY_MORNING_MULTIPLIER = 1.35;
 const FOX_WEEKDAY_EVENING_START_HOUR = 17;
 const FOX_WEEKEND_EVENING_START_HOUR = 15;
+const FOX_EVENING_BENCHMARK_START_HOUR = 17;
+const FOX_EVENING_BENCHMARK_END_HOUR = 22;
 const FOX_MIDDAY_TOPUP_QUARTERS = 6;
 const FOX_MIDDAY_SPREAD_MULTIPLIER = 1.20;
 const FOX_MESSAGES = {
@@ -494,7 +496,12 @@ function createFoxBatteryPlan(prices, currentSoc, timeZone, targetDate, options)
       planOptions.notBefore
     )
     : null;
-  const eveningAveragePrice = getFoxAveragePriceInHours(prices, timeZone, 16, 21);
+  const eveningAveragePrice = getFoxAveragePriceInHours(
+    prices,
+    timeZone,
+    FOX_EVENING_BENCHMARK_START_HOUR,
+    FOX_EVENING_BENCHMARK_END_HOUR
+  );
   const middayTopUpScheduled = Boolean(middayWindow &&
     eveningAveragePrice >=
       middayWindow.averagePrice * FOX_MIDDAY_SPREAD_MULTIPLIER);

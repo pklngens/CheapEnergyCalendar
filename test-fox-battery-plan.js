@@ -44,7 +44,7 @@ function createPrices(date, { overnight = 0.25, midday = 0.10, evening = 0.20 } 
       ? overnight
       : hour >= 10 && hour < 15
         ? midday
-        : hour >= 16 && hour < 21
+        : hour >= 17 && hour < 22
           ? typeof evening === 'function' ? evening(clockIndex) : evening
           : 0.22;
     return {
