@@ -173,12 +173,24 @@ test('a full midday battery preserves the weekend morning rule', () => {
 test('the schedule log still says no top-up is scheduled for a full battery', () => {
   const logs = [];
   const writes = [];
+  let lockReleased = false;
   const properties = {
     FOX_API_KEY: 'test-key',
     FOX_DEVICE_SN: 'test-device',
     FOX_FD_POWER_W: '1200'
   };
   const context = createScriptContext({
+    LockService: {
+      getScriptLock: () => ({
+        tryLock: timeout => {
+          assert.equal(timeout, 30000);
+          return true;
+        },
+        releaseLock: () => {
+          lockReleased = true;
+        }
+      })
+    },
     PropertiesService: {
       getScriptProperties: () => ({ getProperty: name => properties[name] ?? null })
     },
@@ -202,10 +214,143 @@ test('the schedule log still says no top-up is scheduled for a full battery', ()
 
   context.updateFoxChargeSchedule(true);
 
+  assert.equal(lockReleased, true);
   assert.equal(writes.length, 1);
   assert.ok(writes[0].groups.every(group => group.workMode !== 'ForceCharge'));
   assert.equal(logs.length, 1);
   assert.match(logs[0], /morning discharge threshold 0\.3000 EUR\/kWh/);
   assert.match(logs[0], /after-17:00 threshold 0\.1700 EUR\/kWh/);
   assert.match(logs[0], /midday top-up not scheduled\.$/);
+});
+
+test('a locked schedule update logs a warning and returns without processing', () => {
+  const logs = [];
+  let processingStarted = false;
+  const context = createScriptContext({
+    LockService: {
+      getScriptLock: () => ({
+        tryLock: timeout => {
+          assert.equal(timeout, 30000);
+          return false;
+        },
+        releaseLock: () => assert.fail('A lock that was not acquired must not be released')
+      })
+    },
+    Logger: { log: message => logs.push(message) }
+  });
+  context.getFoxBatteryTimeZone = () => {
+    processingStarted = true;
+  };
+
+  assert.doesNotThrow(() => context.updateFoxChargeSchedule(false));
+
+  assert.equal(processingStarted, false);
+  assert.match(logs[0], /Warning: Fox ESS schedule update skipped/);
+});
+
+test('the script lock is released when schedule processing throws', () => {
+  let lockReleased = false;
+  const context = createScriptContext({
+    LockService: {
+      getScriptLock: () => ({
+        tryLock: () => true,
+        releaseLock: () => {
+          lockReleased = true;
+        }
+      })
+    }
+  });
+  context.getFoxBatteryTimeZone = () => {
+    throw new Error('test failure');
+  };
+
+  assert.throws(() => context.updateFoxChargeSchedule(false), /test failure/);
+  assert.equal(lockReleased, true);
+});
+
+test('fetchFoxWithRetry retries transient HTTP responses with exponential backoff', () => {
+  for (const status of [408, 429, 500, 502, 503, 504]) {
+    let attempts = 0;
+    const delays = [];
+    const logs = [];
+    const context = createScriptContext({
+      UrlFetchApp: {
+        fetch: () => {
+          attempts++;
+          const responseStatus = attempts === 1 ? status : 200;
+          return { getResponseCode: () => responseStatus };
+        }
+      },
+      Utilities: { sleep: delayMs => delays.push(delayMs) },
+      Logger: { log: message => logs.push(message) }
+    });
+
+    const response = context.fetchFoxWithRetry('https://example.test', {}, 3, 100);
+
+    assert.equal(response.getResponseCode(), 200);
+    assert.equal(attempts, 2);
+    assert.deepEqual(delays, [100]);
+    assert.match(logs[0], /attempt 2 of 3/);
+  }
+});
+
+test('fetchFoxWithRetry retries network exceptions and rethrows after the final attempt', () => {
+  let attempts = 0;
+  const delays = [];
+  const context = createScriptContext({
+    UrlFetchApp: {
+      fetch: () => {
+        attempts++;
+        if (attempts < 3) {
+          throw new Error('network failure');
+        }
+        return { getResponseCode: () => 200 };
+      }
+    },
+    Utilities: { sleep: delayMs => delays.push(delayMs) },
+    Logger: { log: () => {} }
+  });
+
+  assert.equal(context.fetchFoxWithRetry('https://example.test', {}, 3, 100)
+    .getResponseCode(), 200);
+  assert.equal(attempts, 3);
+  assert.deepEqual(delays, [100, 200]);
+
+  let failedAttempts = 0;
+  const failedDelays = [];
+  const failedContext = createScriptContext({
+    UrlFetchApp: {
+      fetch: () => {
+        failedAttempts++;
+        throw new Error('network failure');
+      }
+    },
+    Utilities: { sleep: delayMs => failedDelays.push(delayMs) },
+    Logger: { log: () => {} }
+  });
+  assert.throws(
+    () => failedContext.fetchFoxWithRetry('https://example.test', {}, 2, 100),
+    /network failure/
+  );
+  assert.equal(failedAttempts, 2);
+  assert.deepEqual(failedDelays, [100]);
+});
+
+test('fetchFoxWithRetry does not retry non-transient HTTP responses', () => {
+  for (const status of [400, 401, 403, 404]) {
+    let attempts = 0;
+    const context = createScriptContext({
+      UrlFetchApp: {
+        fetch: () => {
+          attempts++;
+          return { getResponseCode: () => status };
+        }
+      },
+      Utilities: { sleep: () => assert.fail('A permanent response must not be retried') },
+      Logger: { log: () => assert.fail('A permanent response must not be logged as a retry') }
+    });
+
+    assert.equal(context.fetchFoxWithRetry('https://example.test', {}).getResponseCode(), status);
+    assert.equal(attempts, 1);
+  }
 });

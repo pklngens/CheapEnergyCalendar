@@ -149,7 +149,10 @@ preserve the `{hours}`, `{minPrice}`, `{maxPrice}`, and `{average}` placeholders
 ## Battery plan tests
 
 Run `node --test test-fox-battery-plan.js` with Node.js 18 or later for offline
-planning checks. These tests use simulated data and do not contact Fox ESS.
+planning checks. The tests use Node's built-in test runner, so no npm packages
+or install step are needed. On Windows, install Node.js LTS with
+`winget install --id OpenJS.NodeJS.LTS --exact`. These tests use simulated
+data and do not contact Fox ESS.
 
 ## Fox ESS API tests
 

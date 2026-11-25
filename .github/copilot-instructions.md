@@ -20,12 +20,14 @@ README behavior description and constants summary in the same change.
 
 ## Build, test, and lint
 
-There are no configured build, test, or lint commands in this repository. The
-scripts are run from the Google Apps Script editor. For a manual calendar run,
-execute `scheduleCheapestElectricity`; it makes a live API request and modifies
-the configured calendar. `syncFoxESSForTomorrow` makes live Fox ESS API calls
-and modifies the battery scheduler. Run each install function only when setting
-up or reinstalling its respective trigger.
+There is no configured build or lint command. The scripts are run from the
+Google Apps Script editor. The offline battery-plan tests use Node.js 18 or
+later and can be run with `node --test test-fox-battery-plan.js`; they use
+Node's built-in test runner and need no npm dependencies. For a manual calendar
+run, execute `scheduleCheapestElectricity`; it makes a live API request and
+modifies the configured calendar. `syncFoxESSForTomorrow` makes live Fox ESS
+API calls and modifies the battery scheduler. Run each install function only
+when setting up or reinstalling its respective trigger.
 
 ## Code conventions
 

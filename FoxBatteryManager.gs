@@ -3,6 +3,7 @@ const FOX_MIDDAY_TRIGGER_HOUR = 10;
 const FOX_BASE_URL = 'https://www.foxesscloud.com';
 const FOX_PRICE_API_URL = 'https://public.api.energyzero.nl/public/v1/prices';
 const FOX_PRICE_INTERVAL_MINUTES = 15;
+const FOX_RETRYABLE_HTTP_STATUSES = [408, 429, 500, 502, 503, 504];
 // Eight quarter-hours represent charging from 10% to 100% at 1200 W.
 const FOX_FULL_CHARGE_QUARTERS = 8;
 const FOX_SKIP_CHARGING_SOC = 85;
@@ -59,6 +60,11 @@ const FOX_MESSAGES = {
     triggerSet: 'Fox ESS battery trigger set for approximately {hour}:00 ({timeZone}).',
     middayTriggerSet:
       'Fox ESS midday battery trigger set for approximately {time} ({timeZone}).',
+    scheduleUpdateLocked:
+      'Warning: Fox ESS schedule update skipped because another update holds the script lock.',
+    requestRetry:
+      'Retrying external API request (attempt {attempt} of {maxAttempts}) in ' +
+      '{delayMs} ms after {reason}.',
     scheduleUpdated:
       'Fox ESS scheduler updated for {date}: SoC {currentSoc}%, ' +
       '{requiredQuarters} charging quarter(s), {groupCount} group(s), ' +
@@ -212,11 +218,46 @@ function applyFoxConsumerPrices(intervals, scriptProperties) {
   });
 }
 
+function fetchFoxWithRetry(url, options, maxAttempts = 3, baseDelayMs = 3000) {
+  for (let attempt = 1; ; attempt++) {
+    let response;
+    try {
+      response = UrlFetchApp.fetch(url, options);
+    } catch (error) {
+      if (attempt >= maxAttempts) {
+        throw error;
+      }
+      const delayMs = baseDelayMs * Math.pow(2, attempt - 1);
+      Logger.log(formatFoxMessage(FOX_MESSAGES.LOG_messages.requestRetry, {
+        attempt: attempt + 1,
+        maxAttempts: maxAttempts,
+        delayMs: delayMs,
+        reason: 'network error'
+      }));
+      Utilities.sleep(delayMs);
+      continue;
+    }
+
+    const status = response.getResponseCode();
+    if (!FOX_RETRYABLE_HTTP_STATUSES.includes(status) || attempt >= maxAttempts) {
+      return response;
+    }
+    const delayMs = baseDelayMs * Math.pow(2, attempt - 1);
+    Logger.log(formatFoxMessage(FOX_MESSAGES.LOG_messages.requestRetry, {
+      attempt: attempt + 1,
+      maxAttempts: maxAttempts,
+      delayMs: delayMs,
+      reason: `HTTP ${status}`
+    }));
+    Utilities.sleep(delayMs);
+  }
+}
+
 function fetchFoxEnergyZeroPrices(dayBounds) {
   const url =
     `${FOX_PRICE_API_URL}?energyType=ENERGY_TYPE_ELECTRICITY` +
     `&date=${encodeURIComponent(dayBounds.apiDate)}&interval=INTERVAL_QUARTER`;
-  const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  const response = fetchFoxWithRetry(url, { muteHttpExceptions: true });
   const status = response.getResponseCode();
   const responseText = response.getContentText();
 
@@ -614,6 +655,19 @@ function mergeFoxScheduleGroups(intervals, scheduleValues, timeZone) {
 }
 
 function updateFoxChargeSchedule(middayOnly) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    Logger.log(FOX_MESSAGES.LOG_messages.scheduleUpdateLocked);
+    return;
+  }
+  try {
+    updateFoxChargeScheduleLocked(middayOnly);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function updateFoxChargeScheduleLocked(middayOnly) {
   const timeZone = getFoxBatteryTimeZone();
   const scriptProperties = PropertiesService.getScriptProperties();
   const apiKey = scriptProperties.getProperty('FOX_API_KEY');
@@ -726,7 +780,7 @@ function formatFoxClockIndex(clockIndex) {
 }
 
 function foxApiPost(path, apiKey, payload) {
-  const response = UrlFetchApp.fetch(FOX_BASE_URL + path, {
+  const response = fetchFoxWithRetry(FOX_BASE_URL + path, {
     method: 'post',
     contentType: 'application/json',
     headers: createFoxRequestHeaders(path, apiKey),
