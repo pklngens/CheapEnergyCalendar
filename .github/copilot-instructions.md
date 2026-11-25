@@ -17,6 +17,8 @@ handler, while `installFoxBatteryTrigger` manages only the battery handler.
 Keep the setup and behavior documented in `README.md` aligned with the scripts.
 When changing scheduling behavior or tuning constants, update the matching
 README behavior description and constants summary in the same change.
+For every Script Property change, update and verify the README property matrix
+against the code's requiredness, defaults, accepted values, and validation.
 
 ## Build, test, and lint
 
@@ -28,6 +30,8 @@ run, execute `scheduleCheapestElectricity`; it makes a live API request and
 modifies the configured calendar. `syncFoxESSForTomorrow` makes live Fox ESS
 API calls and modifies the battery scheduler. Run each install function only
 when setting up or reinstalling its respective trigger.
+On Windows, if `node` is not available on `PATH` after installation, run the
+tests with `& 'C:\Program Files\nodejs\node.exe' --test test-fox-battery-plan.js`.
 
 ## Code conventions
 
