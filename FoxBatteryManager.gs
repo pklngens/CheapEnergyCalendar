@@ -413,11 +413,12 @@ function getFoxDischargeThreshold(referencePrice, multiplier) {
 function createFoxBatteryPlan(prices, currentSoc, timeZone, targetDate, options) {
   const planOptions = options || {};
   const middayOnly = planOptions.middayOnly === true;
+  const isBatteryAlreadyFull = middayOnly && currentSoc >= FOX_SKIP_CHARGING_SOC;
   // Scale the eight-quarter 10%-to-100% baseline to the current SoC below 85%.
   const requiredQuarters = currentSoc >= FOX_SKIP_CHARGING_SOC
     ? 0
     : Math.ceil(((100 - currentSoc) / 90) * FOX_FULL_CHARGE_QUARTERS);
-  // When charging is skipped, use a hypothetical overnight window for the threshold.
+  // When charging is skipped, use a hypothetical overnight window as a reference.
   const referenceQuarters = requiredQuarters || FOX_FULL_CHARGE_QUARTERS;
   const overnightWindow = findCheapestPriceWindow(
     prices,
@@ -442,6 +443,7 @@ function createFoxBatteryPlan(prices, currentSoc, timeZone, targetDate, options)
   const middayTopUpScheduled = Boolean(middayWindow &&
     eveningAveragePrice >=
       middayWindow.averagePrice * FOX_MIDDAY_SPREAD_MULTIPLIER);
+  const hasFullMiddayCharge = middayTopUpScheduled || isBatteryAlreadyFull;
   const weekday = Number(Utilities.formatDate(targetDate, timeZone, 'u'));
   const isWeekend = weekday === 6 || weekday === 7;
   const eveningStartHour = isWeekend
@@ -449,12 +451,12 @@ function createFoxBatteryPlan(prices, currentSoc, timeZone, targetDate, options)
     : FOX_WEEKDAY_EVENING_START_HOUR;
   const morningMultiplier = isWeekend
     ? FOX_WEEKEND_MORNING_MULTIPLIER
-    : middayTopUpScheduled
+    : hasFullMiddayCharge
       ? FOX_DISCHARGE_PRICE_MULTIPLIER
       : FOX_WEEKDAY_NO_MIDDAY_MORNING_MULTIPLIER;
   const baseMorningThreshold =
     getFoxDischargeThreshold(overnightWindow.averagePrice, morningMultiplier);
-  const morningDischargeThreshold = !isWeekend && !middayTopUpScheduled
+  const morningDischargeThreshold = !isWeekend && !hasFullMiddayCharge
     ? Math.max(baseMorningThreshold, eveningAveragePrice * 0.80)
     : baseMorningThreshold;
   const middayDischargeThreshold = middayWindow
@@ -463,8 +465,9 @@ function createFoxBatteryPlan(prices, currentSoc, timeZone, targetDate, options)
       FOX_DISCHARGE_PRICE_MULTIPLIER
     )
     : null;
-  const baseEveningThreshold = middayTopUpScheduled
-    ? middayDischargeThreshold
+  // An already-full battery has no midday reference; use a zero-price base.
+  const baseEveningThreshold = hasFullMiddayCharge
+    ? (middayDischargeThreshold === null ? 0 : middayDischargeThreshold)
     : getFoxDischargeThreshold(
       overnightWindow.averagePrice,
       FOX_DISCHARGE_PRICE_MULTIPLIER

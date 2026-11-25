@@ -54,24 +54,27 @@ The manager:
 
   | Time | Condition | Threshold |
   | --- | --- | --- |
-  | Before 17:00 on weekdays or 15:00 on weekends | Weekday with a scheduled midday top-up | Base threshold using the overnight reference and 1.20 multiplier |
-  | Before 17:00 on weekdays | Weekday without a scheduled midday top-up | Higher of the base threshold using the overnight reference and 1.35 multiplier, or 80% of the 16:00 to 21:00 average price |
+  | Before 17:00 on weekdays | Midday top-up scheduled, or SoC at least 85% during the 10:15 re-evaluation | Base threshold using the overnight reference and 1.20 multiplier |
+  | Before 17:00 on weekdays | No midday top-up scheduled, except when SoC is at least 85% during the 10:15 re-evaluation | Higher of the base threshold using the overnight reference and 1.35 multiplier, or 80% of the 16:00 to 21:00 average price |
   | Before 15:00 on weekends | Weekend | Base threshold using the overnight reference and 1.28 multiplier |
   | From the evening start (17:00 weekdays, 15:00 weekends) | Midday top-up scheduled | Higher of the base threshold using the top-up reference and 1.20 multiplier, or 85% of the 16:00 to 21:00 average price |
-  | From the evening start (17:00 weekdays, 15:00 weekends) | No midday top-up scheduled | Higher of the base threshold using the overnight reference and 1.20 multiplier, or 85% of the 16:00 to 21:00 average price |
+  | From the evening start (17:00 weekdays, 15:00 weekends) | SoC at least 85% during the 10:15 re-evaluation | Higher of 0 EUR/kWh or 85% of the 16:00 to 21:00 average price |
+  | From the evening start (17:00 weekdays, 15:00 weekends) | No midday top-up scheduled, except when SoC is at least 85% during the 10:15 re-evaluation | Higher of the base threshold using the overnight reference and 1.20 multiplier, or 85% of the 16:00 to 21:00 average price |
 
   At or above the applicable threshold, the mode is **SelfUse**; below it,
   the mode is **Backup**. Scheduled charging intervals remain **ForceCharge**.
 - smooths isolated single-quarter mode changes: **SelfUse** between
   **Backup** intervals becomes **Backup**, and **Backup** between contiguous
-  **SelfUse** intervals becomes **SelfUse**;
+  **SelfUse** intervals becomes **SelfUse**, even if its price is negative;
 - merges adjacent intervals with identical modes;
 - rejects the plan if the merged group count exceeds Fox ESS's reported
   `maxGroupCount`, and does not replace the existing schedule.
 
 The fixed six-quarter top-up in the 23:00 plan is evaluated independently of
 the 85% primary-charge skip. The 10:15 re-evaluation instead uses live SoC and
-may calculate zero required quarters.
+may calculate zero required quarters. At or above 85%, it treats the battery as
+sufficiently charged for discharge thresholds without scheduling a midday
+top-up; the log still reports the top-up as not scheduled.
 An additional trigger runs around 10:15, reads live SoC, and re-evaluates
 today's cheapest qualifying charge window from 10:30 to 15:00. It updates the
 schedule for the rest of the day. Price windows use local clock times; on the
@@ -142,6 +145,11 @@ than source control.
 
 The calendar title and description templates are in `EVENT_TEXT`. If localized,
 preserve the `{hours}`, `{minPrice}`, `{maxPrice}`, and `{average}` placeholders.
+
+## Battery plan tests
+
+Run `node --test test-fox-battery-plan.js` with Node.js 18 or later for offline
+planning checks. These tests use simulated data and do not contact Fox ESS.
 
 ## Fox ESS API tests
 
